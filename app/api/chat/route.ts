@@ -48,20 +48,23 @@ const blocksTools: AllowedTools[] = [
 
 export async function POST(request: Request) {
   const requestBody = await request.json();
+  
+  // Get selectedFileIds from URL query params
+  const url = new URL(request.url);
+  const selectedFilesParam = url.searchParams.get('selectedFiles');
+  const selectedFileIds = selectedFilesParam ? JSON.parse(decodeURIComponent(selectedFilesParam)) : [];
+  
+  console.log('[DEBUG Server] selectedFileIds from URL:', selectedFileIds);
 
   const {
     id,
     messages,
     modelId,
-    selectedFileIds = [],
   } = requestBody as {
     id: string;
     messages: Array<Message>;
     modelId?: string;
-    selectedFileIds?: string[];
   };
-
-  console.log('[DEBUG] Request body selectedFileIds:', selectedFileIds);
 
   const session = await auth();
 

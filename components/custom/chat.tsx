@@ -42,6 +42,11 @@ export function Chat({
     console.log('[DEBUG] selectedFileIds updated:', selectedFileIds);
   }, [selectedFileIds]);
 
+  // Rebuild API URL when selectedFileIds change
+  const apiUrl = `/api/chat?selectedFiles=${encodeURIComponent(JSON.stringify(selectedFileIds))}`;
+  
+  console.log('[DEBUG] API URL:', apiUrl);
+
   const {
     messages,
     setMessages,
@@ -51,7 +56,7 @@ export function Chat({
   } = useChat({
     id,
     initialMessages,
-    api: '/api/chat',
+    api: apiUrl,
     headers: {
       'Content-Type': 'application/json',
     },
@@ -65,18 +70,6 @@ export function Chat({
       if (window.location.pathname === '/') {
         window.history.replaceState({}, '', `/chat/${id}`);
       }
-    },
-    fetch: async (input, init) => {
-      // Inject selectedFileIds into the request body using ref to get latest value
-      const body = JSON.parse(init?.body as string || '{}');
-      body.selectedFileIds = selectedFileIdsRef.current;
-      
-      console.log('[DEBUG Client] Fetch with selectedFileIds:', selectedFileIdsRef.current);
-      
-      return fetch(input, {
-        ...init,
-        body: JSON.stringify(body),
-      });
     },
   });
 
@@ -226,9 +219,12 @@ export function Chat({
 
     console.log('[DEBUG Client] Sending message with selectedFileIds:', selectedFileIds);
 
-    // Use sendMessage from AI SDK v5 - it expects { text: string } format
+    // Use sendMessage from AI SDK v5 with data option to pass selectedFileIds
     await sendMessage({
       text: message,
+      experimental_data: {
+        selectedFileIds: selectedFileIds,
+      },
     });
   };
 
