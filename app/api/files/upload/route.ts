@@ -55,6 +55,8 @@ export async function POST(request: Request) {
         await minioClient.makeBucket(BUCKET_NAME);
       }
 
+      let resourceId = '';
+
       if (session.user && session.user.id) {
         const [newResource] = await createResource({
           userId: session.user.id,
@@ -63,6 +65,8 @@ export async function POST(request: Request) {
             contentType: file.type,
           },
         });
+
+        resourceId = newResource.id;
 
         const metadata = {
           'Content-Type': file.type,
@@ -87,6 +91,7 @@ export async function POST(request: Request) {
       }
 
       const data = {
+        id: resourceId,
         pathname: filename,
         contentType: file.type,
       };

@@ -7,10 +7,10 @@ import { useScrollToBottom } from '@/components/custom/use-scroll-to-bottom';
 import { Vote } from '@/db/schema';
 import { fetcher } from '@/lib/utils';
 import { Attachment, Message } from 'ai';
-import { useChat } from 'ai/react';
+import { useChat } from '@ai-sdk/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useWindowSize } from 'usehooks-ts';
 import { Block, UIBlock } from './block';
@@ -30,24 +30,158 @@ export function Chat({
   const { mutate } = useSWRConfig();
   const [isFilesVisible, setIsFilesVisible] = useState(false);
   const [selectedFileIds, setSelectedFileIds] = useState<Array<string>>([]);
+  const [localInput, setLocalInput] = useState('');
+  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
+
+  // Use ref to always get the latest selectedFileIds value
+  const selectedFileIdsRef = useRef<Array<string>>([]);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    selectedFileIdsRef.current = selectedFileIds;
+    console.log('[DEBUG] selectedFileIds updated:', selectedFileIds);
+  }, [selectedFileIds]);
 
   const {
     messages,
     setMessages,
-    handleSubmit,
-    input,
-    setInput,
-    append,
-    isLoading,
+    sendMessage,
+    status,
     stop,
-    data: streamingData,
   } = useChat({
-    body: { id, modelId: selectedModelId, selectedFileIds },
+    id,
     initialMessages,
+    api: '/api/chat',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: {
+      modelId: selectedModelId,
+    },
     onFinish: () => {
       mutate('/api/history');
+      // Assistant messages are saved automatically via useEffect
+      // Update URL to chat page after first message is successfully sent
+      if (window.location.pathname === '/') {
+        window.history.replaceState({}, '', `/chat/${id}`);
+      }
+    },
+    fetch: async (input, init) => {
+      // Inject selectedFileIds into the request body using ref to get latest value
+      const body = JSON.parse(init?.body as string || '{}');
+      body.selectedFileIds = selectedFileIdsRef.current;
+      
+      console.log('[DEBUG Client] Fetch with selectedFileIds:', selectedFileIdsRef.current);
+      
+      return fetch(input, {
+        ...init,
+        body: JSON.stringify(body),
+      });
     },
   });
+
+  const isLoading = status === 'streaming' || status === 'submitted';
+  const streamingData = undefined; // v5 handles streaming differently
+  
+  // Safety check for messages
+  const safeMessages = messages || [];
+  
+  // Function to save assistant message to database with its client-side ID
+  const saveAssistantMessage = async (messageId: string) => {
+    try {
+      // Find the message in the messages array
+      const message = safeMessages.find(m => m.id === messageId && m.role === 'assistant');
+      if (!message) {
+        console.error('Could not find assistant message to save');
+        return;
+      }
+      
+      // Debug: Log the full message structure
+      console.log('[DEBUG] Full message structure:', JSON.stringify(message, null, 2));
+      console.log('[DEBUG] Message keys:', Object.keys(message));
+      console.log('[DEBUG] Message content type:', typeof message.content, message.content);
+      
+      // Extract text content from the message (handles both content and parts formats)
+      let messageContent = '';
+      if (typeof message.content === 'string') {
+        messageContent = message.content;
+      } else if (Array.isArray(message.content)) {
+        // Content is an array of parts
+        messageContent = message.content
+          .filter((part: any) => part.type === 'text')
+          .map((part: any) => part.text)
+          .join('\n');
+      } else if ((message as any).parts && Array.isArray((message as any).parts)) {
+        // Parts property directly on the message
+        messageContent = (message as any).parts
+          .filter((part: any) => part.type === 'text')
+          .map((part: any) => part.text)
+          .join('\n');
+      }
+      
+      // If no text content but has tool invocations, create a summary
+      if (!messageContent && (message as any).toolInvocations) {
+        const toolInvocations = (message as any).toolInvocations;
+        messageContent = `[Tool invocations: ${toolInvocations.map((t: any) => t.toolName).join(', ')}]`;
+      }
+      
+      if (!messageContent || messageContent.trim().length === 0) {
+        console.warn('Message has no text content to save, skipping:', message.id);
+        return;
+      }
+      
+      console.log('[DEBUG] Extracted content:', messageContent.substring(0, 100));
+      
+      await fetch('/api/messages/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          chatId: id, 
+          message: {
+            id: message.id,
+            role: message.role,
+            content: messageContent,
+          }
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to save assistant message:', error);
+    }
+  };
+  
+  // Track saved assistant message IDs to avoid duplicates
+  const [savedAssistantIds, setSavedAssistantIds] = useState<Set<string>>(new Set());
+  
+  // Watch for new assistant messages and save them
+  // Only save when not streaming to ensure message is complete
+  useEffect(() => {
+    // Only process when not actively streaming
+    if (status === 'streaming' || status === 'submitted') {
+      return;
+    }
+    
+    const assistantMessages = safeMessages.filter(m => {
+      // Must be assistant role and have an ID
+      if (m.role !== 'assistant' || !m.id) return false;
+      
+      // Must have some form of content
+      const hasTextContent = typeof m.content === 'string' && m.content.length > 0;
+      const hasArrayContent = Array.isArray(m.content) && m.content.length > 0;
+      const hasParts = (m as any).parts && Array.isArray((m as any).parts) && (m as any).parts.length > 0;
+      
+      return hasTextContent || hasArrayContent || hasParts;
+    });
+    
+    console.log('[DEBUG] Processing assistant messages:', assistantMessages.length, 'Status:', status);
+    
+    assistantMessages.forEach(async (msg) => {
+      if (!savedAssistantIds.has(msg.id)) {
+        console.log('[DEBUG] Saving new assistant message:', msg.id);
+        setSavedAssistantIds(prev => new Set(prev).add(msg.id));
+        await saveAssistantMessage(msg.id);
+      }
+    });
+  }, [safeMessages, status, savedAssistantIds, id]);
 
   const { width: windowWidth = 1920, height: windowHeight = 1080 } =
     useWindowSize();
@@ -74,7 +208,40 @@ export function Chat({
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
 
-  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
+  // Use local input for UI
+  const input = localInput;
+  const setInput = (value: string) => {
+    setLocalInput(value);
+  };
+
+  // Create wrapper functions for compatibility
+  const handleSubmit = async (e?: React.FormEvent | { preventDefault?: () => void }) => {
+    if (e && 'preventDefault' in e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+    if (!input.trim()) return;
+
+    const message = input.trim();
+    setLocalInput('');
+
+    console.log('[DEBUG Client] Sending message with selectedFileIds:', selectedFileIds);
+
+    // Use sendMessage from AI SDK v5 - it expects { text: string } format
+    await sendMessage({
+      text: message,
+    });
+  };
+
+  const append = async (message: Message) => {
+    // sendMessage expects either { text: string } or CreateUIMessage format
+    if (typeof message.content === 'string') {
+      await sendMessage({
+        text: message.content,
+      });
+    } else {
+      await sendMessage(message);
+    }
+  };
 
   return (
     <>
@@ -84,16 +251,16 @@ export function Chat({
           ref={messagesContainerRef}
           className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4"
         >
-          {messages.length === 0 && <Overview />}
+          {safeMessages.length === 0 && <Overview />}
 
-          {messages.map((message, index) => (
+          {safeMessages.map((message, index) => (
             <PreviewMessage
               key={message.id}
               chatId={id}
               message={message}
               block={block}
               setBlock={setBlock}
-              isLoading={isLoading && messages.length - 1 === index}
+              isLoading={isLoading && safeMessages.length - 1 === index}
               vote={
                 votes
                   ? votes.find((vote) => vote.messageId === message.id)
@@ -103,8 +270,8 @@ export function Chat({
           ))}
 
           {isLoading &&
-            messages.length > 0 &&
-            messages[messages.length - 1].role === 'user' && (
+            safeMessages.length > 0 &&
+            safeMessages[safeMessages.length - 1].role === 'user' && (
               <ThinkingMessage />
             )}
 
@@ -123,7 +290,7 @@ export function Chat({
             stop={stop}
             attachments={attachments}
             setAttachments={setAttachments}
-            messages={messages}
+            messages={safeMessages}
             setMessages={setMessages}
             append={append}
           />
@@ -162,7 +329,7 @@ export function Chat({
             append={append}
             block={block}
             setBlock={setBlock}
-            messages={messages}
+            messages={safeMessages}
             setMessages={setMessages}
             votes={votes}
           />

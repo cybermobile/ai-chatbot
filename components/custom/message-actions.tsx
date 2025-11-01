@@ -4,7 +4,6 @@ import { useSWRConfig } from 'swr';
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Vote } from '@/db/schema';
-import { getMessageIdFromAnnotations } from '@/lib/utils';
 
 import { CopyIcon, ThumbDownIcon, ThumbUpIcon } from './icons';
 import { Button } from '../ui/button';
@@ -43,7 +42,22 @@ export function MessageActions({
               className="py-1 px-2 h-fit text-muted-foreground"
               variant="outline"
               onClick={async () => {
-                await copyToClipboard(message.content as string);
+                // Handle both string content and parts array from AI SDK v5
+                let textContent = '';
+                if (typeof message.content === 'string') {
+                  textContent = message.content;
+                } else if (Array.isArray(message.content)) {
+                  textContent = message.content
+                    .filter((part: any) => part.type === 'text')
+                    .map((part: any) => part.text)
+                    .join('\n');
+                } else if ((message as any).parts && Array.isArray((message as any).parts)) {
+                  textContent = (message as any).parts
+                    .filter((part: any) => part.type === 'text')
+                    .map((part: any) => part.text)
+                    .join('\n');
+                }
+                await copyToClipboard(textContent);
                 toast.success('Copied to clipboard!');
               }}
             >
@@ -60,7 +74,8 @@ export function MessageActions({
               disabled={vote && vote.isUpvoted}
               variant="outline"
               onClick={async () => {
-                const messageId = getMessageIdFromAnnotations(message);
+                // Use message.id directly for AI SDK v5 compatibility
+                const messageId = message.id;
 
                 const upvote = fetch('/api/vote', {
                   method: 'PATCH',
@@ -114,7 +129,8 @@ export function MessageActions({
               variant="outline"
               disabled={vote && !vote.isUpvoted}
               onClick={async () => {
-                const messageId = getMessageIdFromAnnotations(message);
+                // Use message.id directly for AI SDK v5 compatibility
+                const messageId = message.id;
 
                 const downvote = fetch('/api/vote', {
                   method: 'PATCH',

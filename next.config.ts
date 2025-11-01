@@ -2,10 +2,8 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
-  experimental: {
-    ppr: true,
-  },
   serverExternalPackages: ['pdf-parse'],
+  cacheComponents: false,
   images: {
     remotePatterns: [
       {

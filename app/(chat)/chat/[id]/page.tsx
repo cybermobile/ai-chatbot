@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL_ID, models } from '@/ai/models';
+import { DEFAULT_MODEL_ID, fetchModelsFromOllama } from '@/ai/models';
 import { auth } from '@/app/(auth)/auth';
 import { Chat as PreviewChat } from '@/components/custom/chat';
 import { getChatById, getMessagesByChatId } from '@/db/queries';
@@ -31,8 +31,12 @@ export default async function Page(props: { params: Promise<any> }) {
 
   const cookieStore = await cookies();
   const modelIdFromCookie = cookieStore.get('model-id')?.value;
+  
+  // Fetch models dynamically from Ollama
+  const models = await fetchModelsFromOllama();
   const selectedModelId =
     models.find((model) => model.id === modelIdFromCookie)?.id ||
+    models[0]?.id ||
     DEFAULT_MODEL_ID;
 
   return (

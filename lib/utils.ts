@@ -98,20 +98,45 @@ export function convertToUIMessages(
     let textContent = '';
     let toolInvocations: Array<ToolInvocation> = [];
 
-    if (typeof message.content === 'string') {
-      textContent = message.content;
-    } else if (Array.isArray(message.content)) {
-      for (const content of message.content) {
-        if (content.type === 'text') {
-          textContent += content.text;
-        } else if (content.type === 'tool-call') {
+    // Handle content based on its type
+    let content = message.content;
+    
+    // If content is a JSON string, try to parse it
+    if (typeof content === 'string') {
+      try {
+        const parsed = JSON.parse(content);
+        content = parsed;
+      } catch {
+        // If parsing fails, it's already a plain text string
+        textContent = content;
+      }
+    }
+    
+    // Now process the content
+    if (typeof content === 'string') {
+      // Plain text content
+      textContent = content;
+    } else if (Array.isArray(content)) {
+      // Array of parts (e.g., [{"type":"text","text":"..."}])
+      for (const part of content) {
+        if (part.type === 'text' && part.text) {
+          textContent += part.text;
+        } else if (part.type === 'tool-call') {
           toolInvocations.push({
             state: 'call',
-            toolCallId: content.toolCallId,
-            toolName: content.toolName,
-            args: content.args,
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            args: part.args,
           });
         }
+      }
+    } else if (content && typeof content === 'object') {
+      // If content is an object but not an array, it might be a single part
+      const contentObj = content as any;
+      if (contentObj.text) {
+        textContent = contentObj.text;
+      } else if (contentObj.type === 'text' && contentObj.text) {
+        textContent = contentObj.text;
       }
     }
 

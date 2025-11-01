@@ -34,9 +34,11 @@ export const Files = ({
     isLoading,
   } = useSWR<
     Array<{
+      id: string;
       pathname: string;
+      metadata?: any;
     }>
-  >('api/files/list', fetcher, {
+  >('/api/files/list', fetcher, {
     fallbackData: [],
   });
 
@@ -107,6 +109,9 @@ export const Files = ({
                   if (!response.ok) {
                     const { error } = await response.json();
                     toast.error(error);
+                  } else {
+                    // Success - refresh the file list
+                    mutate();
                   }
                 } catch (error) {
                   toast.error('Failed to upload file');
@@ -115,8 +120,6 @@ export const Files = ({
                 setUploadQueue((currentQueue) =>
                   currentQueue.filter((filename) => filename !== file.name)
                 );
-
-                mutate([...(files || []), { pathname: file.name }]);
               }
             }}
           />
@@ -221,19 +224,28 @@ export const Files = ({
                       file.id,
                     ]);
 
-                    await fetch(`/api/files/delete?fileurl=${file.url}`, {
-                      method: 'DELETE',
-                    });
+                    try {
+                      const response = await fetch(`/api/files/delete?id=${file.id}`, {
+                        method: 'DELETE',
+                      });
+
+                      if (!response.ok) {
+                        const { error } = await response.json();
+                        toast.error(error || 'Failed to delete file');
+                      } else {
+                        // Success - update UI
+                        mutate(files.filter((f) => f.id !== file.id));
+                        setSelectedFileIds((currentSelections) =>
+                          currentSelections.filter((path) => path !== file.id)
+                        );
+                      }
+                    } catch (error) {
+                      toast.error('Failed to delete file');
+                    }
 
                     setDeleteQueue((currentQueue) =>
                       currentQueue.filter((filename) => filename !== file.id)
                     );
-
-                    setSelectedFileIds((currentSelections) =>
-                      currentSelections.filter((path) => path !== file.id)
-                    );
-
-                    mutate(files.filter((f) => f.pathname !== file.pathname));
                   }}
                 >
                   <TrashIcon />

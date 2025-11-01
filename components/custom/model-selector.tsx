@@ -1,8 +1,8 @@
 'use client';
 
-import { startTransition, useMemo, useOptimistic, useState } from 'react';
+import { startTransition, useEffect, useMemo, useOptimistic, useState } from 'react';
 
-import { models } from '@/ai/models';
+import type { Model } from '@/ai/models';
 import { saveModelId } from '@/app/(chat)/actions';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,10 +24,23 @@ export function ModelSelector({
   const [open, setOpen] = useState(false);
   const [optimisticModelId, setOptimisticModelId] =
     useOptimistic(selectedModelId);
+  const [models, setModels] = useState<Model[]>([]);
+
+  // Fetch models from API on mount
+  useEffect(() => {
+    fetch('/api/models')
+      .then(res => res.json())
+      .then(data => {
+        if (data.models) {
+          setModels(data.models);
+        }
+      })
+      .catch(err => console.error('Failed to fetch models:', err));
+  }, []);
 
   const selectModel = useMemo(
     () => models.find((model) => model.id === optimisticModelId),
-    [optimisticModelId]
+    [optimisticModelId, models]
   );
 
   return (

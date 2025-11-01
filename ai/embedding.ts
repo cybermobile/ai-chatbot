@@ -1,9 +1,11 @@
 import { embed, embedMany } from 'ai';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
-import { ollama } from 'ollama-ai-provider';
+import { ollama } from 'ai-sdk-ollama';
 import { removeStopwords } from 'stopword';
 
-export const embeddingModel = ollama.textEmbeddingModel('mxbai-embed-large');
+export const embeddingModel = ollama.embedding('mxbai-embed-large', {
+  baseURL: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
+});
 
 // Clean text
 const cleanText = (text: string): string =>

@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1731222654769,
-      "tag": "0000_remarkable_wild_pack",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1731242269717,
-      "tag": "0001_yielding_shadow_king",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1731246381291,
-      "tag": "0002_fat_mach_iv",
+      "when": 1762029201125,
+      "tag": "0000_skinny_colossus",
       "breakpoints": true
     }
   ]

@@ -34,7 +34,7 @@ export const chat = pgTable('Chat', {
 export type Chat = InferSelectModel<typeof chat>;
 
 export const message = pgTable('Message', {
-  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  id: varchar('id', { length: 255 }).primaryKey().notNull(),
   chatId: uuid('chatId')
     .notNull()
     .references(() => chat.id),
@@ -51,7 +51,7 @@ export const vote = pgTable(
     chatId: uuid('chatId')
       .notNull()
       .references(() => chat.id),
-    messageId: uuid('messageId')
+    messageId: varchar('messageId', { length: 255 })
       .notNull()
       .references(() => message.id),
     isUpvoted: boolean('isUpvoted').notNull(),

@@ -20,17 +20,18 @@ import {
 import {
   convertToCoreMessages,
   Message,
-  StreamData,
   streamObject,
   streamText,
+  createUIMessageStreamResponse,
 } from 'ai';
 import { z } from 'zod';
 
 import { createDocument } from '@/lib/tools/createDocument';
 import { updateDocument } from '@/lib/tools/updateDocument';
-import { generateTitleFromUserMessage } from '../../actions';
+import { generateTitleFromUserMessage } from '@/app/(chat)/actions';
 
 export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
 
 type AllowedTools =
   | 'createDocument'
@@ -45,20 +46,22 @@ const blocksTools: AllowedTools[] = [
   'getContext',
 ];
 
-const allTools: AllowedTools[] = [...blocksTools];
-
 export async function POST(request: Request) {
+  const requestBody = await request.json();
+
   const {
     id,
     messages,
     modelId,
-    selectedFileIds,
-  }: {
+    selectedFileIds = [],
+  } = requestBody as {
     id: string;
     messages: Array<Message>;
-    modelId: string;
-    selectedFileIds: string[];
-  } = await request.json();
+    modelId?: string;
+    selectedFileIds?: string[];
+  };
+
+  console.log('[DEBUG] Request body selectedFileIds:', selectedFileIds);
 
   const session = await auth();
 
@@ -66,7 +69,18 @@ export async function POST(request: Request) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  const model = models.find((model) => model.id === modelId);
+  // Get model from request body, cookies, or use default
+  const { cookies } = await import('next/headers');
+  const { fetchModelsFromOllama } = await import('@/ai/models');
+  
+  const cookieStore = await cookies();
+  const modelIdFromCookie = cookieStore.get('model-id')?.value;
+  
+  // Fetch available models from Ollama
+  const availableModels = await fetchModelsFromOllama();
+  const finalModelId = modelId || modelIdFromCookie || availableModels[0]?.id;
+  
+  const model = availableModels.find((model) => model.id === finalModelId);
 
   if (!model) {
     return new Response('Model not found', { status: 404 });
@@ -88,18 +102,29 @@ export async function POST(request: Request) {
 
   await saveMessages({
     messages: [
-      { ...userMessage, id: generateUUID(), createdAt: new Date(), chatId: id },
+      { 
+        ...userMessage, 
+        // Use the message ID from the request if available, otherwise generate one
+        id: (messages[messages.length - 1] as any)?.id || generateUUID(), 
+        createdAt: new Date(), 
+        chatId: id 
+      },
     ],
   });
 
-  const streamingData = new StreamData();
+  // TODO: Refactor custom data streaming for v5
+  // StreamData is removed in v5 - need to use UI message streams
+  const streamingData = null as any;
+
+  // Only enable getContext tool when files are selected
+  const enabledTools: AllowedTools[] = selectedFileIds.length > 0 ? ['getContext'] : [];
 
   const result = await streamText({
     model: customModel(model.apiIdentifier),
     system: systemPrompt,
     messages: coreMessages,
     maxSteps: 5,
-    experimental_activeTools: allTools,
+    activeTools: enabledTools,
     tools: {
       createDocument: {
         description: 'Create a document for a writing activity',
@@ -176,10 +201,11 @@ export async function POST(request: Request) {
               isResolved: false,
             };
 
-            streamingData.append({
-              type: 'suggestion',
-              content: suggestion,
-            });
+            // TODO v5: Restore with UI message streams
+            // streamingData.append({
+            //   type: 'suggestion',
+            //   content: suggestion,
+            // });
 
             suggestions.push(suggestion);
           }
@@ -205,47 +231,44 @@ export async function POST(request: Request) {
         },
       },
       getContext: {
-        description: `get context from the selected files to answer questions.`,
+        description: `Retrieve relevant information from the user's uploaded PDF documents. Use this tool when the user asks about their uploaded files.`,
         parameters: z.object({
-          question: z.string().describe('the users question'),
+          question: z.string().describe('the users question about the document'),
         }),
-        execute: async ({ question }) =>
-          getSimilarResults(question, session.user!.id!, selectedFileIds),
+        execute: async ({ question }) => {
+          console.log('[getContext] Called with question:', question);
+          console.log('[getContext] Selected file IDs:', selectedFileIds);
+          
+          if (selectedFileIds.length === 0) {
+            return {
+              error: 'No files selected. Please select files from the knowledge base first.',
+            };
+          }
+          
+          const results = await getSimilarResults(question, session.user!.id!, selectedFileIds);
+          console.log('[getContext] Found results:', results.length);
+          
+          if (results.length === 0) {
+            return {
+              message: 'No relevant information found in the selected documents.',
+            };
+          }
+          
+          // Format results as a readable string for the AI
+          const context = results
+            .map((r, i) => `[Chunk ${i + 1} from ${r.source}]:\n${r.content}`)
+            .join('\n\n');
+          
+          return {
+            context,
+            source_count: results.length,
+          };
+        },
       },
     },
-    onFinish: async ({ responseMessages }) => {
-      if (session.user && session.user.id) {
-        try {
-          const responseMessagesWithoutIncompleteToolCalls =
-            sanitizeResponseMessages(responseMessages);
-
-          await saveMessages({
-            messages: responseMessagesWithoutIncompleteToolCalls.map(
-              (message) => {
-                const messageId = generateUUID();
-
-                if (message.role === 'assistant') {
-                  streamingData.appendMessageAnnotation({
-                    messageIdFromServer: messageId,
-                  });
-                }
-
-                return {
-                  id: messageId,
-                  chatId: id,
-                  role: message.role,
-                  content: message.content,
-                  createdAt: new Date(),
-                };
-              }
-            ),
-          });
-        } catch (error) {
-          console.error('Failed to save chat');
-        }
-      }
-
-      streamingData.close();
+    onFinish: async ({ response }) => {
+      // Messages are automatically handled by the UI stream
+      // We'll save them through a different mechanism
     },
     experimental_telemetry: {
       isEnabled: true,
@@ -253,9 +276,8 @@ export async function POST(request: Request) {
     },
   });
 
-  return result.toDataStreamResponse({
-    data: streamingData,
-  });
+  // Return UI message stream response for AI SDK v5  
+  return result.toUIMessageStreamResponse();
 }
 
 export async function DELETE(request: Request) {

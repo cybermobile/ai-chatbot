@@ -26,4 +26,15 @@ export const blocksPrompt = `
 export const regularPrompt =
   'You are a friendly assistant! Keep your responses concise and helpful.';
 
-export const systemPrompt = `${regularPrompt}\n\n${blocksPrompt}`;
+export const contextPrompt = `
+**IMPORTANT - Document Access:**
+If the user asks about "this document", "the file", "explain this", or any document-related question, you MUST:
+1. Use the getContext tool to retrieve information from their uploaded PDFs
+2. Pass the user's question to getContext
+3. Use the returned context to provide a detailed answer
+4. Always call getContext before saying you cannot access files
+
+The getContext tool will return relevant passages from the user's selected documents. Use this information to answer their questions accurately.
+`;
+
+export const systemPrompt = `${regularPrompt}\n\n${blocksPrompt}\n\n${contextPrompt}`;

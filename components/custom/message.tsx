@@ -49,9 +49,34 @@ export const PreviewMessage = ({
         )}
 
         <div className="flex flex-col gap-2 w-full">
-          {message.content && (
+          {/* Handle string content */}
+          {message.content && typeof message.content === 'string' && (
             <div className="flex flex-col gap-4">
-              <Markdown>{message.content as string}</Markdown>
+              <Markdown>{message.content}</Markdown>
+            </div>
+          )}
+          
+          {/* Handle array content (parts) */}
+          {message.content && Array.isArray(message.content) && (
+            <div className="flex flex-col gap-4">
+              {message.content.map((part: any, index: number) => {
+                if (part.type === 'text') {
+                  return <Markdown key={index}>{part.text}</Markdown>;
+                }
+                return null;
+              })}
+            </div>
+          )}
+          
+          {/* Handle parts property directly (AI SDK v5 UI messages) */}
+          {!message.content && (message as any).parts && Array.isArray((message as any).parts) && (
+            <div className="flex flex-col gap-4">
+              {(message as any).parts.map((part: any, index: number) => {
+                if (part.type === 'text') {
+                  return <Markdown key={index}>{part.text}</Markdown>;
+                }
+                return null;
+              })}
             </div>
           )}
 
