@@ -1,6 +1,11 @@
-import { Attachment } from 'ai';
-
 import { LoaderIcon } from './icons';
+
+// Attachment type for file uploads
+type Attachment = {
+  url: string;
+  name?: string;
+  contentType?: string;
+};
 
 export const PreviewAttachment = ({
   attachment,

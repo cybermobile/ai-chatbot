@@ -19,3 +19,13 @@ services:
     volumes:
       - ./data/minio:/data
     command: server /data --console-address ":9001"
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+    restart: unless-stopped

@@ -1,315 +1,277 @@
-import { customModel } from '@/ai';
-import { models } from '@/ai/models';
-import { systemPrompt } from '@/ai/prompts';
 import { auth } from '@/app/(auth)/auth';
+import { customModel } from '@/ai';
+import { systemPrompt } from '@/ai/prompts';
+import { getEnabledTools, type ToolConfig } from '@/ai/tools';
 import {
-  deleteChatById,
   getChatById,
-  getDocumentById,
-  getSimilarResults,
   saveChat,
   saveMessages,
-  saveSuggestions,
+  deleteChatById,
 } from '@/db/queries';
-import { Suggestion } from '@/db/schema';
-import {
-  generateUUID,
-  getMostRecentUserMessage,
-  sanitizeResponseMessages,
-} from '@/lib/utils';
-import {
-  convertToCoreMessages,
-  Message,
-  streamObject,
-  streamText,
-  createUIMessageStreamResponse,
-} from 'ai';
-import { z } from 'zod';
-
-import { createDocument } from '@/lib/tools/createDocument';
-import { updateDocument } from '@/lib/tools/updateDocument';
-import { generateTitleFromUserMessage } from '@/app/(chat)/actions';
+import { generateUUID, getMostRecentUserMessage } from '@/lib/utils';
+import { convertToCoreMessages, generateText, streamText, type Message } from 'ai';
 
 export const maxDuration = 60;
-export const dynamic = 'force-dynamic';
-
-type AllowedTools =
-  | 'createDocument'
-  | 'updateDocument'
-  | 'requestSuggestions'
-  | 'getContext';
-
-const blocksTools: AllowedTools[] = [
-  'createDocument',
-  'updateDocument',
-  'requestSuggestions',
-  'getContext',
-];
 
 export async function POST(request: Request) {
-  const requestBody = await request.json();
-  
-  // Get selectedFileIds from URL query params
-  const url = new URL(request.url);
-  const selectedFilesParam = url.searchParams.get('selectedFiles');
-  const selectedFileIds = selectedFilesParam ? JSON.parse(decodeURIComponent(selectedFilesParam)) : [];
-  
-  console.log('[DEBUG Server] selectedFileIds from URL:', selectedFileIds);
+  try {
+    // 1. Parse request
+    const body = await request.json();
 
-  const {
-    id,
-    messages,
-    modelId,
-  } = requestBody as {
-    id: string;
-    messages: Array<Message>;
-    modelId?: string;
-  };
+    // v5 format: { id, modelId, selectedFileIds, toolConfig, messages }
+    // messages is the full conversation history from the client (Message[])
+    const { id, messages, toolConfig, modelId: bodyModelId, selectedFileIds } = body as {
+      id: string;
+      messages?: Message[];
+      toolConfig?: ToolConfig;
+      modelId?: string;
+      selectedFileIds?: string[];
+    };
 
-  const session = await auth();
+    console.log('[Chat API] Request received:', {
+      id,
+      messageCount: messages?.length,
+      toolConfig,
+      bodyModelId,
+      selectedFileIds,
+    });
 
-  if (!session || !session.user || !session.user.id) {
-    return new Response('Unauthorized', { status: 401 });
-  }
+    // Validate messages
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      console.error('[Chat API] Invalid messages:', messages);
+      return new Response('Invalid messages array', { status: 400 });
+    }
 
-  // Get model from request body, cookies, or use default
-  const { cookies } = await import('next/headers');
-  const { fetchModelsFromOllama } = await import('@/ai/models');
-  
-  const cookieStore = await cookies();
-  const modelIdFromCookie = cookieStore.get('model-id')?.value;
-  
-  // Fetch available models from Ollama
-  const availableModels = await fetchModelsFromOllama();
-  const finalModelId = modelId || modelIdFromCookie || availableModels[0]?.id;
-  
-  const model = availableModels.find((model) => model.id === finalModelId);
+    console.log('[Chat API] Received messages:', JSON.stringify(messages, null, 2));
 
-  if (!model) {
-    return new Response('Model not found', { status: 404 });
-  }
+    // 2. Authenticate
+    const session = await auth();
+    if (!session?.user?.id) {
+      return new Response('Unauthorized', { status: 401 });
+    }
 
-  const coreMessages = convertToCoreMessages(messages);
-  const userMessage = getMostRecentUserMessage(coreMessages);
+    // 3. Get model
+    const { cookies } = await import('next/headers');
+    const { fetchModelsFromOllama } = await import('@/ai/models');
 
-  if (!userMessage) {
-    return new Response('No user message found', { status: 400 });
-  }
+    const cookieStore = await cookies();
+    const modelIdFromCookie = cookieStore.get('model-id')?.value;
+    const availableModels = await fetchModelsFromOllama();
+    const modelId = bodyModelId || modelIdFromCookie || availableModels[0]?.id;
+    const model = availableModels.find((m) => m.id === modelId);
 
-  const chat = await getChatById({ id });
+    console.log('[Chat API] Model selection:', {
+      fromBody: bodyModelId,
+      fromCookie: modelIdFromCookie,
+      fallback: availableModels[0]?.id,
+      selected: modelId,
+      availableCount: availableModels.length,
+      availableModels: availableModels.map(m => m.id),
+    });
 
-  if (!chat) {
-    const title = await generateTitleFromUserMessage({ message: userMessage });
-    await saveChat({ id, userId: session.user.id, title });
-  }
+    if (!model) {
+      return new Response('Model not found', { status: 404 });
+    }
 
-  await saveMessages({
-    messages: [
-      { 
-        ...userMessage, 
-        // Use the message ID from the request if available, otherwise generate one
-        id: (messages[messages.length - 1] as any)?.id || generateUUID(), 
-        createdAt: new Date(), 
-        chatId: id 
-      },
-    ],
-  });
+    console.log('[Chat API] Using model:', model.apiIdentifier);
 
-  // TODO: Refactor custom data streaming for v5
-  // StreamData is removed in v5 - need to use UI message streams
-  const streamingData = null as any;
+    // 4. Convert messages from Message[] to CoreMessage[] for model
+    // Remove toolInvocations property if present (v4 format compatibility)
+    const cleanMessages = messages.map(msg => {
+      const { toolInvocations, ...rest } = msg as any;
+      return rest;
+    });
 
-  // Only enable getContext tool when files are selected
-  const enabledTools: AllowedTools[] = selectedFileIds.length > 0 ? ['getContext'] : [];
+    console.log('[Chat API] About to convert messages. Type check:', {
+      isArray: Array.isArray(cleanMessages),
+      length: cleanMessages?.length,
+      firstMessage: cleanMessages?.[0],
+    });
 
-  const result = await streamText({
-    model: customModel(model.apiIdentifier),
-    system: systemPrompt,
-    messages: coreMessages,
-    maxSteps: 5,
-    activeTools: enabledTools,
-    tools: {
-      createDocument: {
-        description: 'Create a document for a writing activity',
-        parameters: z.object({
-          title: z.string(),
-        }),
-        execute: async ({ title }) =>
-          createDocument({
-            title,
-            stream: streamingData,
-            modelId: model.apiIdentifier,
-            session,
-          }),
-      },
-      updateDocument: {
-        description: 'Update a document with the given description',
-        parameters: z.object({
-          id: z.string().describe('The ID of the document to update'),
-          description: z
-            .string()
-            .describe('The description of changes that need to be made'),
-        }),
-        execute: async ({ id, description }) =>
-          updateDocument({
-            id,
-            description,
-            stream: streamingData,
-            modelId: model.apiIdentifier,
-            session,
-          }),
-      },
-      requestSuggestions: {
-        description: 'Request suggestions for a document',
-        parameters: z.object({
-          documentId: z
-            .string()
-            .describe('The ID of the document to request edits'),
-        }),
-        execute: async ({ documentId }) => {
-          const document = await getDocumentById({ id: documentId });
+    const coreMessages = convertToCoreMessages(cleanMessages);
+    console.log('[Chat API] Successfully converted to core messages:', coreMessages.length);
 
-          if (!document || !document.content) {
+    const userMessage = getMostRecentUserMessage(coreMessages);
+
+    if (!userMessage) {
+      return new Response('No user message found', { status: 400 });
+    }
+
+    // 5. Create chat if it doesn't exist
+    const chat = await getChatById({ id });
+    if (!chat) {
+      // Generate title
+      const { text: title } = await generateText({
+        model: customModel(model.apiIdentifier),
+        system: 'Generate a short title (max 80 chars) for this conversation. No quotes or colons.',
+        prompt: JSON.stringify(userMessage),
+      });
+      
+      await saveChat({ id, userId: session.user.id, title });
+      console.log('[Chat API] Created new chat:', { id, title });
+    }
+
+    // 6. Save user message
+    await saveMessages({
+      messages: [{
+        ...userMessage,
+        id: messages[messages.length - 1]?.id || generateUUID(),
+        createdAt: new Date(),
+        chatId: id,
+      }],
+    });
+
+    // 7. Get enabled tools based on config
+    const tools = toolConfig ? getEnabledTools(toolConfig) : {};
+    const hasTools = Object.keys(tools).length > 0;
+
+    console.log('[Chat API] Enabled tools:', Object.keys(tools));
+
+    // 8. Stream response
+    console.log('[Chat API] Starting stream with', coreMessages.length, 'messages');
+    console.log('[Chat API] Model:', model.apiIdentifier, '| Has tools:', hasTools);
+
+    const result = await streamText({
+      model: customModel(model.apiIdentifier),
+      system: systemPrompt,
+      messages: coreMessages,
+      temperature: 0.5, // Lower temperature for more deterministic responses and better tool calling
+      ...(hasTools && {
+        tools,
+        maxSteps: 10, // Increase to allow model more chances to generate final response
+        toolChoice: 'auto', // Let the model decide when to use tools
+      }),
+      onStepFinish: ({ text, toolCalls, toolResults, finishReason, stepType }) => {
+        console.log('[Chat API] Step finished:', {
+          stepType,
+          hasText: !!text,
+          textLength: text?.length || 0,
+          textPreview: text && typeof text === 'string' ? text.substring(0, 100) : null,
+          toolCallsCount: toolCalls?.length || 0,
+          toolResultsCount: toolResults?.length || 0,
+          finishReason,
+        });
+        if (toolCalls && toolCalls.length > 0) {
+          console.log('[Chat API] Tool calls:', toolCalls.map(tc => ({
+            name: tc.toolName,
+            args: tc.args,
+          })));
+        }
+        if (toolResults && toolResults.length > 0) {
+          console.log('[Chat API] Tool results preview:', toolResults.map(tr => {
+            const resultStr = tr.result ? JSON.stringify(tr.result) : '';
             return {
-              error: 'Document not found',
+              toolName: tr.toolName,
+              resultPreview: resultStr.substring(0, 100),
             };
-          }
+          }));
+        }
+      },
+      onFinish: async ({ text, toolCalls, toolResults, finishReason, usage, response, rawResponse }) => {
+        console.log('[Chat API] Stream finished:', {
+          hasText: !!text,
+          textLength: text?.length || 0,
+          textPreview: text?.substring(0, 100),
+          toolCallsCount: toolCalls?.length || 0,
+          toolResultsCount: toolResults?.length || 0,
+          finishReason,
+          usage,
+          responseMessages: response?.messages?.length || 0,
+        });
 
-          let suggestions: Array<
-            Omit<Suggestion, 'userId' | 'createdAt' | 'documentCreatedAt'>
-          > = [];
+        // DEBUG: Log raw response to see what we're actually getting
+        console.log('[Chat API] Raw text value:', JSON.stringify(text));
+        console.log('[Chat API] Response object keys:', response ? Object.keys(response) : 'no response');
 
-          const { elementStream } = await streamObject({
-            model: customModel(model.apiIdentifier),
-            system:
-              'You are a help writing assistant. Given a piece of writing, please offer suggestions to improve the piece of writing and describe the change. It is very important for the edits to contain full sentences instead of just words. Max 5 suggestions.',
-            prompt: document.content,
-            output: 'array',
-            schema: z.object({
-              originalSentence: z.string().describe('The original sentence'),
-              suggestedSentence: z.string().describe('The suggested sentence'),
-              description: z
-                .string()
-                .describe('The description of the suggestion'),
-            }),
-          });
+        if (toolCalls && toolCalls.length > 0) {
+          console.log('[Chat API] Final tool calls:', JSON.stringify(toolCalls, null, 2));
+        }
+        if (toolResults && toolResults.length > 0) {
+          console.log('[Chat API] Final tool results:', JSON.stringify(toolResults, null, 2));
+        }
 
-          for await (const element of elementStream) {
-            const suggestion = {
-              originalText: element.originalSentence,
-              suggestedText: element.suggestedSentence,
-              description: element.description,
+        // DEBUG: Log full response to see what we're getting
+        if (response?.messages) {
+          console.log('[Chat API] Full response messages:', JSON.stringify(response.messages, null, 2));
+        }
+
+        // Save all response messages (assistant + tool results)
+        // This ensures tool calls are persisted even when there's no text response
+        // The content from response.messages is already in the correct CoreMessage format
+        // which is compatible with our database schema
+        if (response?.messages && response.messages.length > 0) {
+          const messagesToSave = response.messages.map((msg: any) => ({
+            id: generateUUID(),
+            chatId: id,
+            role: msg.role,
+            content: msg.content, // This is already in CoreMessage format (string or content array)
+            createdAt: new Date(),
+          }));
+
+          await saveMessages({ messages: messagesToSave });
+          console.log('[Chat API] Saved', messagesToSave.length, 'messages (including tool calls/results)');
+        } else if (text) {
+          // Fallback: save just the text if response.messages is not available
+          await saveMessages({
+            messages: [{
               id: generateUUID(),
-              documentId: documentId,
-              isResolved: false,
-            };
-
-            // TODO v5: Restore with UI message streams
-            // streamingData.append({
-            //   type: 'suggestion',
-            //   content: suggestion,
-            // });
-
-            suggestions.push(suggestion);
-          }
-
-          if (session.user && session.user.id) {
-            const userId = session.user.id;
-
-            await saveSuggestions({
-              suggestions: suggestions.map((suggestion) => ({
-                ...suggestion,
-                userId,
-                createdAt: new Date(),
-                documentCreatedAt: document.createdAt,
-              })),
-            });
-          }
-
-          return {
-            id: documentId,
-            title: document.title,
-            message: 'Suggestions have been added to the document',
-          };
-        },
+              role: 'assistant',
+              content: text,
+              chatId: id,
+              createdAt: new Date(),
+            }],
+          });
+          console.log('[Chat API] Saved assistant message:', text.substring(0, 50));
+        } else {
+          console.log('[Chat API] WARNING: No messages to save!');
+        }
       },
-      getContext: {
-        description: `Retrieve relevant information from the user's uploaded PDF documents. Use this tool when the user asks about their uploaded files.`,
-        parameters: z.object({
-          question: z.string().describe('the users question about the document'),
-        }),
-        execute: async ({ question }) => {
-          console.log('[getContext] Called with question:', question);
-          console.log('[getContext] Selected file IDs:', selectedFileIds);
-          
-          if (selectedFileIds.length === 0) {
-            return {
-              error: 'No files selected. Please select files from the knowledge base first.',
-            };
-          }
-          
-          const results = await getSimilarResults(question, session.user!.id!, selectedFileIds);
-          console.log('[getContext] Found results:', results.length);
-          
-          if (results.length === 0) {
-            return {
-              message: 'No relevant information found in the selected documents.',
-            };
-          }
-          
-          // Format results as a readable string for the AI
-          const context = results
-            .map((r, i) => `[Chunk ${i + 1} from ${r.source}]:\n${r.content}`)
-            .join('\n\n');
-          
-          return {
-            context,
-            source_count: results.length,
-          };
-        },
-      },
-    },
-    onFinish: async ({ response }) => {
-      // Messages are automatically handled by the UI stream
-      // We'll save them through a different mechanism
-    },
-    experimental_telemetry: {
-      isEnabled: true,
-      functionId: 'stream-text',
-    },
-  });
+    });
 
-  // Return UI message stream response for AI SDK v5  
-  return result.toUIMessageStreamResponse();
+    console.log('[Chat API] Returning stream response');
+
+    // Return the stream response
+    // Messages are saved via the onFinish callback above
+    return result.toUIMessageStreamResponse();
+  } catch (error) {
+    console.error('[Chat API] Error:', error);
+    return new Response(
+      JSON.stringify({ 
+        error: 'Internal server error', 
+        message: error instanceof Error ? error.message : 'Unknown error' 
+      }), 
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
 }
 
 export async function DELETE(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get('id');
-
-  if (!id) {
-    return new Response('Not Found', { status: 404 });
-  }
-
-  const session = await auth();
-
-  if (!session || !session.user) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
   try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return new Response('Not Found', { status: 404 });
+    }
+
+    const session = await auth();
+    if (!session?.user) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+
     const chat = await getChatById({ id });
+    if (!chat) {
+      return new Response('Chat not found', { status: 404 });
+    }
 
     if (chat.userId !== session.user.id) {
       return new Response('Unauthorized', { status: 401 });
     }
 
     await deleteChatById({ id });
-
     return new Response('Chat deleted', { status: 200 });
   } catch (error) {
-    return new Response('An error occurred while processing your request', {
-      status: 500,
-    });
+    console.error('[Chat API DELETE] Error:', error);
+    return new Response('An error occurred', { status: 500 });
   }
 }

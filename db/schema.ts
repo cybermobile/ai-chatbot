@@ -129,7 +129,7 @@ export const embedding = pgTable(
       })
       .notNull(),
     content: text(),
-    embedding: vector('embedding', { dimensions: 1024 }),
+    embedding: vector('embedding', { dimensions: 768 }), // nomic-embed-text: 768, mxbai-embed-large: 1024
   },
   (table) => {
     return {

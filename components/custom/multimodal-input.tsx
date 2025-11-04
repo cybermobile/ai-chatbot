@@ -113,7 +113,11 @@ export function MultimodalInput({
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
 
   const submitForm = useCallback(() => {
-    handleSubmit(undefined);
+    window.history.replaceState({}, '', `/chat/${chatId}`);
+
+    handleSubmit(undefined, {
+      experimental_attachments: attachments,
+    });
 
     setAttachments([]);
     setLocalStorageInput('');
@@ -148,10 +152,14 @@ export function MultimodalInput({
                 <Button
                   variant="ghost"
                   onClick={async () => {
-                    append({
-                      role: 'user',
-                      content: suggestedAction.action,
-                    });
+                    window.history.replaceState({}, '', `/chat/${chatId}`);
+
+                    // v5: Use text field instead of role/content
+                    setInput(suggestedAction.action);
+                    // Trigger submit after setting input
+                    setTimeout(() => {
+                      handleSubmit();
+                    }, 0);
                   }}
                   className="text-left border rounded-xl px-4 py-3.5 text-sm flex-1 gap-1 sm:flex-col w-full h-auto justify-start items-start"
                 >

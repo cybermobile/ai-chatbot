@@ -1,3 +1,4 @@
-import { Experimental_LanguageModelV1Middleware } from 'ai';
+import { experimental_wrapLanguageModel as wrapLanguageModel } from 'ai';
 
-export const customMiddleware: Experimental_LanguageModelV1Middleware = {};
+// Middleware for v5 - currently empty but ready for custom logic
+export const customMiddleware = {};

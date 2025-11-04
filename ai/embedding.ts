@@ -1,15 +1,19 @@
 import { embed, embedMany } from 'ai';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
-import { ollama } from 'ai-sdk-ollama';
+import { ollama } from 'ollama-ai-provider-v2';
 import { removeStopwords } from 'stopword';
 
-export const embeddingModel = ollama.embedding('mxbai-embed-large', {
-  baseURL: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
-});
+export const embeddingModel = ollama.textEmbeddingModel('nomic-embed-text:latest');
 
 // Clean text
-const cleanText = (text: string): string =>
-  removeStopwords(
+const cleanText = (text: string): string => {
+  // Validate input
+  if (!text || typeof text !== 'string') {
+    console.error('[Embedding] cleanText received invalid input:', text);
+    return '';
+  }
+
+  return removeStopwords(
     text
       .replace(/https?:\/\/\S+/g, '') // Remove URLs
       .replace(/[^a-zA-Z0-9\s.,!?-]/g, ' ') // Remove special chars
@@ -18,6 +22,7 @@ const cleanText = (text: string): string =>
       .trim()
       .split(' ')
   ).join(' ');
+};
 
 // Create chunks
 const createChunks = async (

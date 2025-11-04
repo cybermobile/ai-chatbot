@@ -8,6 +8,13 @@
       "when": 1762029201125,
       "tag": "0000_skinny_colossus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1762037479118,
+      "tag": "0001_fine_thena",
+      "breakpoints": true
     }
   ]
 }

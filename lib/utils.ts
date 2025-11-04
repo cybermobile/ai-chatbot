@@ -68,10 +68,15 @@ function addToolMessageToChat({
           );
 
           if (toolResult) {
+            // v5: tool results use 'output' not 'result'
+            // The output can be either { type: 'json', value: ... } or a direct value
+            const output = (toolResult as any).output || (toolResult as any).result;
+            const resultValue = output?.type === 'json' ? output.value : output;
+
             return {
               ...toolInvocation,
               state: 'result',
-              result: toolResult.result,
+              result: resultValue,
             };
           }
 
@@ -98,45 +103,20 @@ export function convertToUIMessages(
     let textContent = '';
     let toolInvocations: Array<ToolInvocation> = [];
 
-    // Handle content based on its type
-    let content = message.content;
-    
-    // If content is a JSON string, try to parse it
-    if (typeof content === 'string') {
-      try {
-        const parsed = JSON.parse(content);
-        content = parsed;
-      } catch {
-        // If parsing fails, it's already a plain text string
-        textContent = content;
-      }
-    }
-    
-    // Now process the content
-    if (typeof content === 'string') {
-      // Plain text content
-      textContent = content;
-    } else if (Array.isArray(content)) {
-      // Array of parts (e.g., [{"type":"text","text":"..."}])
-      for (const part of content) {
-        if (part.type === 'text' && part.text) {
-          textContent += part.text;
-        } else if (part.type === 'tool-call') {
+    if (typeof message.content === 'string') {
+      textContent = message.content;
+    } else if (Array.isArray(message.content)) {
+      for (const content of message.content) {
+        if (content.type === 'text') {
+          textContent += content.text;
+        } else if (content.type === 'tool-call') {
           toolInvocations.push({
             state: 'call',
-            toolCallId: part.toolCallId,
-            toolName: part.toolName,
-            args: part.args,
+            toolCallId: content.toolCallId,
+            toolName: content.toolName,
+            args: content.args,
           });
         }
-      }
-    } else if (content && typeof content === 'object') {
-      // If content is an object but not an array, it might be a single part
-      const contentObj = content as any;
-      if (contentObj.text) {
-        textContent = contentObj.text;
-      } else if (contentObj.type === 'text' && contentObj.text) {
-        textContent = contentObj.text;
       }
     }
 

@@ -6,6 +6,9 @@ import { convertToUIMessages } from '@/lib/utils';
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function Page(props: { params: Promise<any> }) {
   const params = await props.params;
   const { id } = params;
@@ -41,6 +44,7 @@ export default async function Page(props: { params: Promise<any> }) {
 
   return (
     <PreviewChat
+      key={chat.id}
       id={chat.id}
       initialMessages={convertToUIMessages(messagesFromDb)}
       selectedModelId={selectedModelId}

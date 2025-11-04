@@ -3,6 +3,7 @@
 import cx from 'classnames';
 import { format, isWithinInterval } from 'date-fns';
 import { useEffect, useState } from 'react';
+import { Sun, Moon, Cloud, CloudRain, CloudSnow } from 'lucide-react';
 
 interface WeatherAtLocation {
   latitude: number;
@@ -264,7 +265,7 @@ export function Weather({
         <div className="flex flex-row gap-2 items-center">
           <div
             className={cx(
-              'size-10 rounded-full skeleton-div',
+              'size-10 rounded-full skeleton-div flex items-center justify-center',
               {
                 'bg-yellow-300': isDay,
               },
@@ -272,7 +273,13 @@ export function Weather({
                 'bg-indigo-100': !isDay,
               }
             )}
-          />
+          >
+            {isDay ? (
+              <Sun className="size-6 text-yellow-600" />
+            ) : (
+              <Moon className="size-6 text-indigo-600" />
+            )}
+          </div>
           <div className="text-4xl font-medium text-blue-50">
             {n(weatherAtLocation.current.temperature_2m)}
             {weatherAtLocation.current_units.temperature_2m}
@@ -283,28 +290,41 @@ export function Weather({
       </div>
 
       <div className="flex flex-row justify-between">
-        {displayTimes.map((time, index) => (
-          <div key={time} className="flex flex-col items-center gap-1">
-            <div className="text-blue-100 text-xs">
-              {format(new Date(time), 'ha')}
+        {displayTimes.map((time, index) => {
+          const hourIsDay = isWithinInterval(new Date(time), {
+            start: new Date(weatherAtLocation.daily.sunrise[0]),
+            end: new Date(weatherAtLocation.daily.sunset[0]),
+          });
+
+          return (
+            <div key={time} className="flex flex-col items-center gap-1">
+              <div className="text-blue-100 text-xs">
+                {format(new Date(time), 'ha')}
+              </div>
+              <div
+                className={cx(
+                  'size-6 rounded-full skeleton-div flex items-center justify-center',
+                  {
+                    'bg-yellow-300': hourIsDay,
+                  },
+                  {
+                    'bg-indigo-200': !hourIsDay,
+                  }
+                )}
+              >
+                {hourIsDay ? (
+                  <Sun className="size-4 text-yellow-600" />
+                ) : (
+                  <Moon className="size-4 text-indigo-600" />
+                )}
+              </div>
+              <div className="text-blue-50 text-sm">
+                {n(displayTemperatures[index])}
+                {weatherAtLocation.hourly_units.temperature_2m}
+              </div>
             </div>
-            <div
-              className={cx(
-                'size-6 rounded-full skeleton-div',
-                {
-                  'bg-yellow-300': isDay,
-                },
-                {
-                  'bg-indigo-200': !isDay,
-                }
-              )}
-            />
-            <div className="text-blue-50 text-sm">
-              {n(displayTemperatures[index])}
-              {weatherAtLocation.hourly_units.temperature_2m}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

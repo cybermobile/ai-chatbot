@@ -342,6 +342,67 @@ export async function getUserResources({ userId }: { userId: string }) {
   }
 }
 
+export async function findRelevantContent({
+  userQuery,
+  userId,
+  topK = 5,
+  alpha = 0.6, // Weight for semantic vs keyword search (0.6 = 60% semantic, 40% keyword)
+}: {
+  userQuery: string;
+  userId: string;
+  topK?: number;
+  alpha?: number; // Hybrid search weight (0-1, higher = more semantic)
+}) {
+  try {
+    const queryEmbedding = await generateEmbedding(userQuery);
+
+    // Hybrid search: combine semantic (vector) + keyword (full-text) search
+    // Using BM25-style ranking via ts_rank
+    const results = await db
+      .select({
+        id: embedding.id,
+        content: embedding.content,
+        resourceId: embedding.resourceId,
+        resourceName: resource.name,
+        resourceMetadata: resource.metadata,
+        // Semantic score: cosine similarity
+        semanticScore: sql<number>`1 - (${cosineDistance(embedding.embedding, queryEmbedding)})`,
+        // Keyword score: PostgreSQL full-text search with BM25-like ranking
+        keywordScore: sql<number>`ts_rank(to_tsvector('english', ${embedding.content}), plainto_tsquery('english', ${userQuery}))`,
+        // Hybrid score: weighted combination
+        hybridScore: sql<number>`
+          (${alpha} * (1 - (${cosineDistance(embedding.embedding, queryEmbedding)}))) +
+          (${1 - alpha} * ts_rank(to_tsvector('english', ${embedding.content}), plainto_tsquery('english', ${userQuery})))
+        `,
+      })
+      .from(embedding)
+      .innerJoin(resource, eq(embedding.resourceId, resource.id))
+      .where(eq(resource.userId, userId))
+      .orderBy(desc(sql`
+        (${alpha} * (1 - (${cosineDistance(embedding.embedding, queryEmbedding)}))) +
+        (${1 - alpha} * ts_rank(to_tsvector('english', ${embedding.content}), plainto_tsquery('english', ${userQuery})))
+      `))
+      .limit(topK);
+
+    console.log('[DB] Hybrid search found', results.length, 'relevant chunks for query:', userQuery);
+    console.log('[DB] Using alpha =', alpha, '(semantic weight)');
+
+    return results.map(r => ({
+      id: r.id,
+      content: r.content,
+      resourceId: r.resourceId,
+      resourceName: r.resourceName,
+      resourceMetadata: r.resourceMetadata,
+      similarity: r.hybridScore, // Use hybrid score as overall similarity
+      semanticScore: r.semanticScore,
+      keywordScore: r.keywordScore,
+    }));
+  } catch (error) {
+    console.error('Failed to find relevant content from database:', error);
+    throw error;
+  }
+}
+
 export async function getUserResource({
   userId,
   resourceIds,

@@ -30,6 +30,15 @@ export const PreviewMessage = ({
   vote: Vote | undefined;
   isLoading: boolean;
 }) => {
+  // Debug logging
+  console.log('[PreviewMessage] Rendering message:', {
+    id: message.id,
+    role: message.role,
+    contentType: typeof message.content,
+    contentIsArray: Array.isArray(message.content),
+    content: message.content,
+  });
+
   return (
     <motion.div
       className="w-full mx-auto max-w-3xl px-4 group/message"
@@ -49,30 +58,30 @@ export const PreviewMessage = ({
         )}
 
         <div className="flex flex-col gap-2 w-full">
-          {/* Handle string content */}
-          {message.content && typeof message.content === 'string' && (
+          {/* v5: Handle parts array (new format) */}
+          {(message as any).parts && Array.isArray((message as any).parts) && (
             <div className="flex flex-col gap-4">
-              <Markdown>{message.content}</Markdown>
-            </div>
-          )}
-          
-          {/* Handle array content (parts) */}
-          {message.content && Array.isArray(message.content) && (
-            <div className="flex flex-col gap-4">
-              {message.content.map((part: any, index: number) => {
-                if (part.type === 'text') {
+              {(message as any).parts.map((part: any, index: number) => {
+                if (part.type === 'text' && part.text) {
                   return <Markdown key={index}>{part.text}</Markdown>;
                 }
                 return null;
               })}
             </div>
           )}
-          
-          {/* Handle parts property directly (AI SDK v5 UI messages) */}
-          {!message.content && (message as any).parts && Array.isArray((message as any).parts) && (
+
+          {/* Legacy: Handle string content */}
+          {!((message as any).parts) && message.content && typeof message.content === 'string' && (
             <div className="flex flex-col gap-4">
-              {(message as any).parts.map((part: any, index: number) => {
-                if (part.type === 'text') {
+              <Markdown>{message.content}</Markdown>
+            </div>
+          )}
+
+          {/* Legacy: Handle array content */}
+          {!((message as any).parts) && Array.isArray(message.content) && message.content.length > 0 && (
+            <div className="flex flex-col gap-4">
+              {message.content.map((part: any, index: number) => {
+                if (part.type === 'text' && part.text) {
                   return <Markdown key={index}>{part.text}</Markdown>;
                 }
                 return null;
@@ -85,13 +94,22 @@ export const PreviewMessage = ({
               {message.toolInvocations.map((toolInvocation) => {
                 const { toolName, toolCallId, state, args } = toolInvocation;
 
+                console.log('[Message] Tool invocation:', { toolName, state, hasResult: !!toolInvocation.result });
+
                 if (state === 'result') {
                   const { result } = toolInvocation;
 
                   return (
                     <div key={toolCallId}>
                       {toolName === 'getWeather' ? (
-                        <Weather weatherAtLocation={result} />
+                        result?.error ? (
+                          <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg">
+                            <div className="text-xs font-medium mb-1">⚠️ Weather Error</div>
+                            <div className="text-sm">{result.error}</div>
+                          </div>
+                        ) : result ? (
+                          <Weather weatherAtLocation={result} />
+                        ) : null
                       ) : toolName === 'createDocument' ? (
                         <DocumentToolResult
                           type="create"
@@ -115,8 +133,34 @@ export const PreviewMessage = ({
                         />
                       ) : toolName === 'getContext' ? (
                         <Markdown>Retrieved context</Markdown>
+                      ) : toolName === 'webSearch' ? (
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            🔍 Web Search Results
+                          </div>
+                          <pre className="text-xs overflow-auto">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                      ) : toolName === 'rag' ? (
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            📚 Knowledge Base Results
+                          </div>
+                          <pre className="text-xs overflow-auto">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                      ) : toolName === 'calculator' ? (
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            🧮 Calculation
+                          </div>
+                          <pre className="text-xs overflow-auto">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
                       ) : (
-                        <pre>{JSON.stringify(result, null, 2)}</pre>
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            🔧 Tool: {toolName}
+                          </div>
+                          <pre className="text-xs overflow-auto">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
                       )}
                     </div>
                   );
@@ -125,7 +169,7 @@ export const PreviewMessage = ({
                     <div
                       key={toolCallId}
                       className={cx({
-                        skeleton: ['getWeather'].includes(toolName),
+                        skeleton: ['getWeather', 'webSearch', 'rag', 'calculator'].includes(toolName),
                       })}
                     >
                       {toolName === 'getWeather' ? (
@@ -139,7 +183,31 @@ export const PreviewMessage = ({
                           type="request-suggestions"
                           args={args}
                         />
-                      ) : null}
+                      ) : toolName === 'webSearch' ? (
+                        <div className="bg-muted p-3 rounded-lg border animate-pulse">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            🔍 Searching the web for: {args.query}...
+                          </div>
+                        </div>
+                      ) : toolName === 'rag' ? (
+                        <div className="bg-muted p-3 rounded-lg border animate-pulse">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            📚 Searching knowledge base for: {args.query}...
+                          </div>
+                        </div>
+                      ) : toolName === 'calculator' ? (
+                        <div className="bg-muted p-3 rounded-lg border animate-pulse">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            🧮 Calculating: {args.expression}...
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-muted p-3 rounded-lg border animate-pulse">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            ⏳ Running {toolName}...
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 }

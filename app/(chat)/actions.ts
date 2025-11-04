@@ -11,11 +11,13 @@ export async function saveModelId(model: string) {
 
 export async function generateTitleFromUserMessage({
   message,
+  modelId,
 }: {
   message: CoreUserMessage;
+  modelId: string;
 }) {
   const { text: title } = await generateText({
-    model: customModel('llama3.1'),
+    model: customModel(modelId),
     system: `\n
     - you will generate a short title based on the first message a user begins a conversation with
     - ensure it is not more than 80 characters long
