@@ -29,3 +29,54 @@ services:
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080/
     restart: unless-stopped
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    ports:
+      - "11434:8000"  # Map to Ollama's port for easy replacement
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+    command: >
+      --model meta-llama/Meta-Llama-3.1-8B-Instruct
+      --tool-call-parser llama3_json
+      --chat-template /vllm-workspace/examples/tool_chat_template_llama3_json.jinja
+      --host 0.0.0.0
+      --port 8000
+      --gpu-memory-utilization 0.7
+      --max-model-len 8192
+      --dtype auto
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    shm_size: '4gb'
+    restart: unless-stopped
+  vllm-embeddings:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-embeddings
+    ports:
+      - "11435:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+    command: >
+      --model BAAI/bge-small-en-v1.5
+      --host 0.0.0.0
+      --port 8000
+      --gpu-memory-utilization 0.3
+      --dtype auto
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    shm_size: '2gb'
+    restart: unless-stopped
