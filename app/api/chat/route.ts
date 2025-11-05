@@ -78,8 +78,40 @@ export async function POST(request: Request) {
     // 4. Convert messages from Message[] to CoreMessage[] for model
     // Remove toolInvocations property if present (v4 format compatibility)
     // Also validate and sanitize message content
-    const cleanMessages = messages.map(msg => {
-      const { toolInvocations, ...rest } = msg as any;
+    const cleanMessages = messages
+      .filter(msg => {
+        // Filter out messages with empty content and no valid parts
+        if (!msg.content || (typeof msg.content === 'string' && msg.content.trim() === '')) {
+          const hasParts = (msg as any).parts && Array.isArray((msg as any).parts) && (msg as any).parts.length > 0;
+          if (!hasParts) {
+            console.warn('[Chat API] Filtering out message with empty content:', msg.id);
+            return false;
+          }
+          // If has parts, extract text from them
+          const textParts = (msg as any).parts
+            .filter((p: any) => p.type === 'text' && p.text)
+            .map((p: any) => p.text)
+            .join('\n');
+          if (!textParts.trim()) {
+            console.warn('[Chat API] Filtering out message with no text in parts:', msg.id);
+            return false;
+          }
+        }
+        return true;
+      })
+      .map(msg => {
+      const { toolInvocations, parts, ...rest } = msg as any;
+      
+      // If content is empty but parts exist, extract text from parts
+      if ((!rest.content || rest.content === '') && parts && Array.isArray(parts)) {
+        const textParts = parts
+          .filter((p: any) => p.type === 'text' && p.text)
+          .map((p: any) => p.text)
+          .join('\n');
+        if (textParts) {
+          return { ...rest, content: textParts };
+        }
+      }
       
       // Ensure content is valid - must be string or array, not undefined
       if (rest.content === undefined || rest.content === null) {
@@ -104,28 +136,68 @@ export async function POST(request: Request) {
       return rest;
     }).filter(msg => msg !== null); // Remove any null messages
 
+    // Ensure all messages have the minimal required structure for AI SDK v5
+    // Only include properties that AI SDK expects
+    const validMessages = cleanMessages.map(msg => {
+      // Ensure content is always defined as string or array
+      let content = msg.content;
+      if (content === undefined || content === null) {
+        content = '';
+      }
+      
+      // Build the message with only the fields AI SDK needs
+      const validMessage: any = {
+        role: msg.role,
+        content,
+      };
+      
+      // Only add optional fields if they exist and are valid
+      if (msg.id && typeof msg.id === 'string') {
+        validMessage.id = msg.id;
+      }
+      if (msg.name && typeof msg.name === 'string') {
+        validMessage.name = msg.name;
+      }
+      
+      return validMessage;
+    });
+
     console.log('[Chat API] About to convert messages. Type check:', {
-      isArray: Array.isArray(cleanMessages),
-      length: cleanMessages?.length,
-      firstMessage: cleanMessages?.[0],
+      isArray: Array.isArray(validMessages),
+      length: validMessages?.length,
+      firstMessage: validMessages?.[0],
     });
 
     let coreMessages;
-    try {
-      coreMessages = convertToCoreMessages(cleanMessages);
-    } catch (error) {
-      console.error('[Chat API] Failed to convert messages:', error);
-      console.error('[Chat API] Problematic messages:', JSON.stringify(cleanMessages, null, 2));
-      return new Response(JSON.stringify({ 
-        error: 'Failed to process message history. This may be due to corrupted data from previous versions.',
-        message: error instanceof Error ? error.message : 'Unknown error',
-        hint: 'Try starting a new chat or clearing your history.'
-      }), { 
-        status: 400, 
-        headers: { 'Content-Type': 'application/json' } 
-      });
+    
+    // Check if messages are already in simple core format (string content only, no complex types)
+    const areSimpleMessages = validMessages.every(msg => 
+      typeof msg.content === 'string' && 
+      ['user', 'assistant', 'system'].includes(msg.role)
+    );
+    
+    if (areSimpleMessages && validMessages.length > 0) {
+      // Messages are already in correct format, no conversion needed
+      console.log('[Chat API] Messages are already in simple core format, skipping conversion');
+      coreMessages = validMessages;
+    } else {
+      // Need to convert complex messages (with tool calls, images, etc.)
+      try {
+        coreMessages = convertToCoreMessages(validMessages);
+        console.log('[Chat API] Successfully converted to core messages:', coreMessages.length);
+      } catch (error) {
+        console.error('[Chat API] Failed to convert messages:', error);
+        console.error('[Chat API] Problematic messages:', JSON.stringify(validMessages, null, 2));
+        return new Response(JSON.stringify({ 
+          error: 'Failed to process message history. This may be due to corrupted data from previous versions.',
+          message: error instanceof Error ? error.message : 'Unknown error',
+          hint: 'Try starting a new chat or clearing your history.'
+        }), { 
+          status: 400, 
+          headers: { 'Content-Type': 'application/json' } 
+        });
+      }
     }
-    console.log('[Chat API] Successfully converted to core messages:', coreMessages.length);
 
     // OpenAI Chat Completions API requires alternating roles
     // Merge consecutive messages with the same role

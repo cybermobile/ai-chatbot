@@ -8,7 +8,7 @@ import { ToolToggle } from '@/components/custom/tool-toggle';
 import { Vote } from '@/db/schema';
 import { fetcher } from '@/lib/utils';
 import { type ToolConfig } from '@/ai/tools';
-import { Attachment, Message } from 'ai';
+import { Attachment, Message, ChatRequestOptions, CreateMessage } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileIcon } from 'lucide-react';
@@ -52,7 +52,6 @@ export function Chat({
     messages,
     setMessages,
     sendMessage,
-    append: originalAppend,
     status,
     stop,
     data: streamingData,
@@ -107,17 +106,29 @@ export function Chat({
     setInput(''); // Clear input after sending
   };
 
-  // Wrapper for append to include dynamic values
-  const append = (message: any, chatRequestOptions?: any) => {
-    return originalAppend(message, {
-      ...chatRequestOptions,
-      body: {
-        id,
-        modelId: selectedModelId,
-        selectedFileIds,
-        toolConfig, // Dynamic value captured at append time
-      },
-    });
+  // Wrapper for append to include dynamic values (AI SDK v5 uses sendMessage)
+  const append = async (message: Message | CreateMessage, chatRequestOptions?: ChatRequestOptions) => {
+    // Extract the message text
+    const messageText = typeof message === 'string' 
+      ? message 
+      : 'content' in message 
+        ? message.content 
+        : (message as any).text || '';
+    
+    // Send the message - sendMessage will add it to the UI automatically
+    return sendMessage(
+      { text: messageText },
+      {
+        body: {
+          id,
+          modelId: selectedModelId,
+          selectedFileIds,
+          toolConfig, // Dynamic value captured at append time
+          ...(chatRequestOptions?.body || {}),
+        },
+        ...(chatRequestOptions || {}),
+      }
+    );
   };
 
   const { width: windowWidth = 1920, height: windowHeight = 1080 } =
