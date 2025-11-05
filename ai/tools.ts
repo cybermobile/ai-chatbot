@@ -235,12 +235,152 @@ export const getWeatherTool = tool({
   },
 });
 
+// Create Document Tool
+export const createDocumentTool = tool({
+  description: 'Create a new document with AI-generated content about a specific topic. Use this when the user asks you to write, draft, or create a document. The document will be displayed in a full-screen canvas editor with version history.',
+  parameters: z.object({
+    title: z.string().min(1).optional().describe('The title or main topic of the document to create'),
+    topic: z.string().min(1).optional().describe('Alternative: the topic of the document'),
+    prompt: z.string().min(1).optional().describe('Alternative: the prompt describing what to write'),
+  }).refine(data => data.title || data.topic || data.prompt, {
+    message: 'One of title, topic, or prompt must be provided',
+  }),
+  execute: async ({ title, topic, prompt }) => {
+    // Accept title, topic, or prompt parameter
+    const documentTitle = title || topic || prompt || '';
+    console.log('[createDocument] Tool called with title:', documentTitle);
+    
+    // Validate title
+    if (!documentTitle || documentTitle.trim().length === 0) {
+      console.error('[createDocument] Empty title provided');
+      return { 
+        error: 'Document title is required. Please specify what you want to write about.',
+        id: '',
+        title: '',
+        content: ''
+      };
+    }
+    
+    const { auth } = await import('@/app/(auth)/auth');
+    const { generateUUID } = await import('@/lib/utils');
+    const { customModel } = await import('@/ai');
+    const { generateText } = await import('ai');
+    const { saveDocument } = await import('@/db/queries');
+    
+    const session = await auth();
+    if (!session?.user?.id) {
+      console.error('[createDocument] User not authenticated');
+      return { 
+        error: 'You must be logged in to create documents',
+        id: '',
+        title: documentTitle,
+        content: ''
+      };
+    }
+    
+    const id = generateUUID();
+    console.log('[createDocument] Generating document with ID:', id);
+    
+    // Get default model
+    const { DEFAULT_MODEL_ID } = await import('@/ai/models');
+    
+    try {
+      // Generate document content
+      const { text } = await generateText({
+        model: customModel(DEFAULT_MODEL_ID),
+        system: 'Write about the given topic. Use markdown formatting with headings and paragraphs. Make it comprehensive but concise.',
+        prompt: documentTitle,
+      });
+      
+      console.log('[createDocument] Generated', text.length, 'characters');
+      
+      // Save to database
+      await saveDocument({
+        id,
+        title: documentTitle,
+        content: text,
+        userId: session.user.id,
+      });
+      
+      console.log('[createDocument] Saved to database');
+      
+      return {
+        id,
+        title: documentTitle,
+        content: `Document created successfully. Click to view the full content.`,
+      };
+    } catch (error) {
+      console.error('[createDocument] Error:', error);
+      return {
+        error: error instanceof Error ? error.message : 'Failed to generate document',
+        id: '',
+        title: documentTitle,
+        content: ''
+      };
+    }
+  },
+});
+
+// Update Document Tool
+export const updateDocumentTool = tool({
+  description: 'Update an existing document with new content based on user instructions.',
+  parameters: z.object({
+    id: z.string().describe('The ID of the document to update'),
+    description: z.string().describe('Instructions on how to update the document'),
+  }),
+  execute: async ({ id, description }) => {
+    const { auth } = await import('@/app/(auth)/auth');
+    const { customModel } = await import('@/ai');
+    const { generateText } = await import('ai');
+    const { getDocumentById, saveDocument } = await import('@/db/queries');
+    
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { error: 'You must be logged in to update documents' };
+    }
+    
+    const document = await getDocumentById({ id });
+    if (!document) {
+      return { error: 'Document not found' };
+    }
+    
+    // Get default model
+    const { DEFAULT_MODEL_ID } = await import('@/ai/models');
+    
+    // Generate updated content
+    const { text } = await generateText({
+      model: customModel(DEFAULT_MODEL_ID),
+      system: 'You are a helpful writing assistant. Update the document based on the instructions.',
+      messages: [
+        { role: 'user', content: description },
+        { role: 'user', content: `Current content:\n${document.content}` },
+      ],
+    });
+    
+    // Save updated document
+    await saveDocument({
+      id,
+      title: document.title,
+      content: text,
+      userId: session.user.id,
+    });
+    
+    return {
+      id,
+      title: document.title,
+      content: text.substring(0, 200) + '...',
+    };
+  },
+});
+
 // Export all tools as a collection
 export const allTools = {
   webSearch: webSearchTool,
   rag: ragTool,
   calculator: calculatorTool,
   getWeather: getWeatherTool,
+  createDocument: createDocumentTool,
+  updateDocument: updateDocumentTool,
 };
 
 // Type for tool configurations
@@ -249,16 +389,20 @@ export type ToolConfig = {
   rag?: boolean;
   calculator?: boolean;
   weather?: boolean;
+  createDocument?: boolean;
+  updateDocument?: boolean;
 };
 
 // Helper to get enabled tools based on config
 export function getEnabledTools(config: ToolConfig) {
-  const tools: Record<string, typeof webSearchTool | typeof ragTool | typeof calculatorTool | typeof getWeatherTool> = {};
+  const tools: Record<string, typeof webSearchTool | typeof ragTool | typeof calculatorTool | typeof getWeatherTool | typeof createDocumentTool | typeof updateDocumentTool> = {};
 
   if (config.webSearch) tools.webSearch = webSearchTool;
   if (config.rag) tools.rag = ragTool;
   if (config.calculator) tools.calculator = calculatorTool;
   if (config.weather) tools.getWeather = getWeatherTool;
+  if (config.createDocument) tools.createDocument = createDocumentTool;
+  if (config.updateDocument) tools.updateDocument = updateDocumentTool;
 
   return tools;
 }

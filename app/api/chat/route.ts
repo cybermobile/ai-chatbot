@@ -77,10 +77,32 @@ export async function POST(request: Request) {
 
     // 4. Convert messages from Message[] to CoreMessage[] for model
     // Remove toolInvocations property if present (v4 format compatibility)
+    // Also validate and sanitize message content
     const cleanMessages = messages.map(msg => {
       const { toolInvocations, ...rest } = msg as any;
+      
+      // Ensure content is valid - must be string or array, not undefined
+      if (rest.content === undefined || rest.content === null) {
+        console.warn('[Chat API] Message with undefined content:', rest.id);
+        return { ...rest, content: '' };
+      }
+      
+      // If content is an array, ensure it's not empty and has valid parts
+      if (Array.isArray(rest.content)) {
+        const validContent = rest.content.filter((part: any) => 
+          part && (part.type === 'text' || part.type === 'image' || part.type === 'tool-call' || part.type === 'tool-result')
+        );
+        
+        if (validContent.length === 0) {
+          console.warn('[Chat API] Message with empty content array:', rest.id);
+          return { ...rest, content: '' };
+        }
+        
+        return { ...rest, content: validContent };
+      }
+      
       return rest;
-    });
+    }).filter(msg => msg !== null); // Remove any null messages
 
     console.log('[Chat API] About to convert messages. Type check:', {
       isArray: Array.isArray(cleanMessages),
@@ -88,10 +110,46 @@ export async function POST(request: Request) {
       firstMessage: cleanMessages?.[0],
     });
 
-    const coreMessages = convertToCoreMessages(cleanMessages);
+    let coreMessages;
+    try {
+      coreMessages = convertToCoreMessages(cleanMessages);
+    } catch (error) {
+      console.error('[Chat API] Failed to convert messages:', error);
+      console.error('[Chat API] Problematic messages:', JSON.stringify(cleanMessages, null, 2));
+      return new Response(JSON.stringify({ 
+        error: 'Failed to process message history. This may be due to corrupted data from previous versions.',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        hint: 'Try starting a new chat or clearing your history.'
+      }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
     console.log('[Chat API] Successfully converted to core messages:', coreMessages.length);
 
-    const userMessage = getMostRecentUserMessage(coreMessages);
+    // OpenAI Chat Completions API requires alternating roles
+    // Merge consecutive messages with the same role
+    const mergedMessages = coreMessages.reduce((acc: any[], msg: any, idx: number) => {
+      if (idx === 0 || msg.role !== acc[acc.length - 1].role) {
+        acc.push(msg);
+      } else {
+        // Merge consecutive messages with same role
+        const prev = acc[acc.length - 1];
+        if (typeof prev.content === 'string' && typeof msg.content === 'string') {
+          prev.content = prev.content + '\n\n' + msg.content;
+        } else if (Array.isArray(prev.content) && Array.isArray(msg.content)) {
+          prev.content = [...prev.content, ...msg.content];
+        }
+      }
+      return acc;
+    }, []);
+
+    console.log('[Chat API] Merged consecutive messages:', {
+      before: coreMessages.length,
+      after: mergedMessages.length,
+    });
+
+    const userMessage = getMostRecentUserMessage(mergedMessages);
 
     if (!userMessage) {
       return new Response('No user message found', { status: 400 });
@@ -106,7 +164,7 @@ export async function POST(request: Request) {
         system: 'Generate a short title (max 80 chars) for this conversation. No quotes or colons.',
         prompt: JSON.stringify(userMessage),
       });
-      
+
       await saveChat({ id, userId: session.user.id, title });
       console.log('[Chat API] Created new chat:', { id, title });
     }
@@ -128,20 +186,20 @@ export async function POST(request: Request) {
     console.log('[Chat API] Enabled tools:', Object.keys(tools));
 
     // 8. Stream response
-    console.log('[Chat API] Starting stream with', coreMessages.length, 'messages');
+    console.log('[Chat API] Starting stream with', mergedMessages.length, 'messages');
     console.log('[Chat API] Model:', model.apiIdentifier, '| Has tools:', hasTools);
 
     const result = await streamText({
       model: customModel(model.apiIdentifier),
       system: systemPrompt,
-      messages: coreMessages,
-      temperature: 0.5, // Lower temperature for more deterministic responses and better tool calling
+      messages: mergedMessages,
+      temperature: 0.7, // Slightly higher to encourage text generation after tool calls
       ...(hasTools && {
         tools,
-        maxSteps: 10, // Increase to allow model more chances to generate final response
+        maxSteps: 15, // More steps to ensure model generates response after tool use
         toolChoice: 'auto', // Let the model decide when to use tools
       }),
-      onStepFinish: ({ text, toolCalls, toolResults, finishReason, stepType }) => {
+      onStepFinish: ({ text, toolCalls, toolResults, finishReason, stepType, response }) => {
         console.log('[Chat API] Step finished:', {
           stepType,
           hasText: !!text,
@@ -150,7 +208,14 @@ export async function POST(request: Request) {
           toolCallsCount: toolCalls?.length || 0,
           toolResultsCount: toolResults?.length || 0,
           finishReason,
+          responseMessages: response?.messages?.length || 0,
         });
+
+        // Debug: Log raw response to see what vLLM is returning
+        if (response?.messages && response.messages.length > 0) {
+          console.log('[Chat API] Step response messages:', JSON.stringify(response.messages, null, 2));
+        }
+
         if (toolCalls && toolCalls.length > 0) {
           console.log('[Chat API] Tool calls:', toolCalls.map(tc => ({
             name: tc.toolName,

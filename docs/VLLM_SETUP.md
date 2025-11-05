@@ -1,28 +1,46 @@
-# vLLM Setup Guide for Linux with RTX 3080
+# vLLM Setup Guide for Arch Linux with RTX 3080
 
 This guide will help you set up vLLM for better tool calling performance compared to Ollama.
 
 ## Prerequisites
 
-### 1. Linux System Requirements
-- Ubuntu 20.04+ or similar
+### 1. Arch Linux System Requirements
+- Arch Linux (up-to-date)
 - RTX 3080 GPU (10GB VRAM)
 - NVIDIA Driver 525+ installed
 - Docker & Docker Compose installed
 - NVIDIA Container Toolkit installed
 
-### 2. Install NVIDIA Container Toolkit (if not already installed)
+### 2. Install Required Packages
 
 ```bash
-# Add NVIDIA package repository
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/libnvidia-container/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list | \
-  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+# Install NVIDIA drivers (if not already installed)
+sudo pacman -S nvidia nvidia-utils
 
-# Install NVIDIA Container Toolkit
-sudo apt-get update
-sudo apt-get install -y nvidia-container-toolkit
+# Install Docker and Docker Compose
+sudo pacman -S docker docker-compose
+
+# Enable and start Docker service
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# Add your user to docker group (to run docker without sudo)
+sudo usermod -aG docker $USER
+# Log out and back in for group changes to take effect
+```
+
+### 3. Install NVIDIA Container Toolkit (if not already installed)
+
+```bash
+# Install NVIDIA Container Toolkit from AUR
+# Using yay (install yay first if you don't have it: sudo pacman -S yay)
+yay -S nvidia-container-toolkit
+
+# Alternatively, using paru
+# paru -S nvidia-container-toolkit
+
+# Configure Docker to use NVIDIA runtime
+sudo nvidia-ctk runtime configure --runtime=docker
 
 # Restart Docker
 sudo systemctl restart docker
@@ -226,8 +244,14 @@ docker logs vllm | grep -i tool
 docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
 
 # If fails, reinstall NVIDIA Container Toolkit
-sudo apt-get install -y nvidia-container-toolkit
+yay -S nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
+
+# Ensure you're in the docker group
+groups | grep docker
+# If not, add yourself and log out/in
+sudo usermod -aG docker $USER
 ```
 
 ## Performance Comparison

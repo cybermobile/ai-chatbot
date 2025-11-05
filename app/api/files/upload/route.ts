@@ -81,12 +81,19 @@ export async function POST(request: Request) {
         );
 
         if (file.type === 'application/pdf') {
-          const parsed = await pdf(fileBuffer);
-          const embeddings = await generateEmbeddings(parsed.text);
-          await insertEmbeddings({
-            resourceId: newResource.id,
-            embeddings,
-          });
+          try {
+            const parsed = await pdf(fileBuffer);
+            const embeddings = await generateEmbeddings(parsed.text);
+            await insertEmbeddings({
+              resourceId: newResource.id,
+              embeddings,
+            });
+            console.log(`[Upload] Successfully generated embeddings for ${filename}`);
+          } catch (pdfError) {
+            console.error(`[Upload] Failed to parse PDF ${filename}:`, pdfError);
+            console.log(`[Upload] File uploaded to MinIO but embeddings not generated`);
+            // Continue without embeddings - file is still uploaded
+          }
         }
       }
 

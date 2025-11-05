@@ -111,19 +111,33 @@ export const PreviewMessage = ({
                           <Weather weatherAtLocation={result} />
                         ) : null
                       ) : toolName === 'createDocument' ? (
-                        <DocumentToolResult
-                          type="create"
-                          result={result}
-                          block={block}
-                          setBlock={setBlock}
-                        />
+                        <>
+                          <DocumentToolResult
+                            type="create"
+                            result={result}
+                            block={block}
+                            setBlock={setBlock}
+                          />
+                          {result.id && !result.error && (
+                            <div className="text-sm text-muted-foreground mt-2">
+                              ✨ Document created! Click the card above to view and edit it.
+                            </div>
+                          )}
+                        </>
                       ) : toolName === 'updateDocument' ? (
-                        <DocumentToolResult
-                          type="update"
-                          result={result}
-                          block={block}
-                          setBlock={setBlock}
-                        />
+                        <>
+                          <DocumentToolResult
+                            type="update"
+                            result={result}
+                            block={block}
+                            setBlock={setBlock}
+                          />
+                          {result.id && !result.error && (
+                            <div className="text-sm text-muted-foreground mt-2">
+                              ✨ Document updated! Click the card above to view changes.
+                            </div>
+                          )}
+                        </>
                       ) : toolName === 'requestSuggestions' ? (
                         <DocumentToolResult
                           type="request-suggestions"

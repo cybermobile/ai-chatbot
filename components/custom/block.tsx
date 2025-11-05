@@ -1,3 +1,5 @@
+'use client';
+
 import { Attachment, ChatRequestOptions, CreateMessage, Message } from 'ai';
 import cx from 'classnames';
 import { formatDistance } from 'date-fns';
@@ -19,6 +21,7 @@ import {
 
 import { Document, Suggestion, Vote } from '@/db/schema';
 import { fetcher } from '@/lib/utils';
+import { type ToolConfig } from '@/ai/tools';
 
 import { DiffView } from './diffview';
 import { DocumentSkeleton } from './document-skeleton';
@@ -60,6 +63,8 @@ export function Block({
   messages,
   setMessages,
   votes,
+  toolConfig,
+  setToolConfig,
 }: {
   chatId: string;
   input: string;
@@ -83,23 +88,34 @@ export function Block({
     },
     chatRequestOptions?: ChatRequestOptions
   ) => void;
+  toolConfig: ToolConfig;
+  setToolConfig: Dispatch<SetStateAction<ToolConfig>>;
 }) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
+
+  // Helper to check if documentId is valid
+  const isValidDocumentId = (id: string | undefined): boolean => {
+    if (!id) return false;
+    if (id === 'init') return false;
+    if (id.startsWith(':')) return false; // Filter out malformed IDs like ':1'
+    if (id.length < 10) return false; // UUIDs are much longer
+    return true;
+  };
 
   const {
     data: documents,
     isLoading: isDocumentsFetching,
     mutate: mutateDocuments,
   } = useSWR<Array<Document>>(
-    block && block.status !== 'streaming'
+    block && block.status !== 'streaming' && isValidDocumentId(block.documentId)
       ? `/api/document?id=${block.documentId}`
       : null,
     fetcher
   );
 
   const { data: suggestions } = useSWR<Array<Suggestion>>(
-    documents && block && block.status !== 'streaming'
+    documents && block && block.status !== 'streaming' && isValidDocumentId(block.documentId)
       ? `/api/suggestions?documentId=${block.documentId}`
       : null,
     fetcher,
@@ -130,6 +146,22 @@ export function Block({
   useEffect(() => {
     mutateDocuments();
   }, [block.status, mutateDocuments]);
+
+  // Hide body overflow when Block is visible
+  useEffect(() => {
+    try {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        try {
+          document.body.style.overflow = 'unset';
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      };
+    } catch (e) {
+      // Body not available yet, ignore
+    }
+  }, []);
 
   const { mutate } = useSWRConfig();
   const [isContentDirty, setIsContentDirty] = useState(false);
@@ -285,10 +317,10 @@ export function Block({
             )}
           </AnimatePresence>
 
-          <div className="flex flex-col h-full justify-between items-center gap-4">
+          <div className="flex flex-col h-full justify-between gap-4 w-full">
             <div
               ref={messagesContainerRef}
-              className="flex flex-col gap-4 h-full items-center overflow-y-scroll px-4 pt-20"
+              className="flex flex-col gap-4 h-full overflow-y-scroll px-4 pt-20 w-full"
             >
               {messages.map((message, index) => (
                 <PreviewMessage
@@ -326,6 +358,9 @@ export function Block({
                 append={append}
                 className="bg-background dark:bg-muted"
                 setMessages={setMessages}
+                toolConfig={toolConfig}
+                setToolConfig={setToolConfig}
+                isBlockVisible={true}
               />
             </form>
           </div>

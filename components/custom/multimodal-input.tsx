@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { useLocalStorage, useWindowSize } from 'usehooks-ts';
 
 import { sanitizeUIMessages } from '@/lib/utils';
+import { type ToolConfig } from '@/ai/tools';
 
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
@@ -25,11 +26,13 @@ const suggestedActions = [
     title: 'What is the weather',
     label: 'in San Francisco?',
     action: 'What is the weather in San Francisco?',
+    enableTools: { weather: true } as Partial<ToolConfig>,
   },
   {
     title: 'Help me draft an essay',
     label: 'about Silicon Valley',
     action: 'Help me draft a short essay about Silicon Valley',
+    enableTools: {} as Partial<ToolConfig>,
   },
 ];
 
@@ -45,7 +48,10 @@ export function MultimodalInput({
   setMessages,
   append,
   handleSubmit,
+  toolConfig,
+  setToolConfig,
   className,
+  isBlockVisible,
 }: {
   chatId: string;
   input: string;
@@ -66,7 +72,10 @@ export function MultimodalInput({
     },
     chatRequestOptions?: ChatRequestOptions
   ) => void;
+  toolConfig: ToolConfig;
+  setToolConfig: Dispatch<SetStateAction<ToolConfig>>;
   className?: string;
+  isBlockVisible?: boolean;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
@@ -138,7 +147,8 @@ export function MultimodalInput({
     <div className="relative w-full flex flex-col gap-4">
       {messages.length === 0 &&
         attachments.length === 0 &&
-        uploadQueue.length === 0 && (
+        uploadQueue.length === 0 &&
+        !isBlockVisible && (
           <div className="grid sm:grid-cols-2 gap-2 w-full">
             {suggestedActions.map((suggestedAction, index) => (
               <motion.div
@@ -153,6 +163,14 @@ export function MultimodalInput({
                   variant="ghost"
                   onClick={async () => {
                     window.history.replaceState({}, '', `/chat/${chatId}`);
+
+                    // Enable tools specified in the suggested action
+                    if (suggestedAction.enableTools && Object.keys(suggestedAction.enableTools).length > 0) {
+                      setToolConfig(prev => ({
+                        ...prev,
+                        ...suggestedAction.enableTools,
+                      }));
+                    }
 
                     // v5: Use text field instead of role/content
                     setInput(suggestedAction.action);

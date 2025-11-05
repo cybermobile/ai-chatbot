@@ -7,7 +7,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { type ToolConfig } from '@/ai/tools';
-import { ChevronDown, Search, Database, Calculator, Cloud } from 'lucide-react';
+import { ChevronDown, Search, Database, Calculator, Cloud, FileText, FilePenLine } from 'lucide-react';
 import { useState } from 'react';
 
 interface ToolToggleProps {
@@ -68,6 +68,20 @@ export function ToolToggle({ toolConfig, setToolConfig }: ToolToggleProps) {
           description="Get weather forecasts and conditions"
           enabled={toolConfig.weather || false}
           onToggle={() => toggleTool('weather')}
+        />
+        <ToolItem
+          icon={FileText}
+          label="Create Document"
+          description="Create AI-generated documents in a canvas"
+          enabled={toolConfig.createDocument || false}
+          onToggle={() => toggleTool('createDocument')}
+        />
+        <ToolItem
+          icon={FilePenLine}
+          label="Update Document"
+          description="Modify existing documents"
+          enabled={toolConfig.updateDocument || false}
+          onToggle={() => toggleTool('updateDocument')}
         />
       </CollapsibleContent>
     </Collapsible>

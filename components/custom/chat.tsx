@@ -12,9 +12,10 @@ import { Attachment, Message } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileIcon } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useWindowSize } from 'usehooks-ts';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Block, UIBlock } from './block';
 import { BlockStreamHandler } from './block-stream-handler';
 import { MultimodalInput } from './multimodal-input';
@@ -30,6 +31,9 @@ export function Chat({
   selectedModelId: string;
 }) {
   const { mutate } = useSWRConfig();
+  const router = useRouter();
+  const loadedDocumentIdRef = useRef<string | null>(null);
+  const documentWasOpenedRef = useRef(false);
   const [isFilesVisible, setIsFilesVisible] = useState(false);
   const [selectedFileIds, setSelectedFileIds] = useState<Array<string>>([]);
   const [toolConfig, setToolConfig] = useState<ToolConfig>({
@@ -37,6 +41,8 @@ export function Chat({
     rag: false,
     calculator: false,
     weather: false,
+    createDocument: false,
+    updateDocument: false,
   });
 
   // v5: Manage input state manually
@@ -117,6 +123,9 @@ export function Chat({
   const { width: windowWidth = 1920, height: windowHeight = 1080 } =
     useWindowSize();
 
+  const searchParams = useSearchParams();
+  const documentIdFromUrl = searchParams?.get('documentId');
+
   const [block, setBlock] = useState<UIBlock>({
     documentId: 'init',
     content: '',
@@ -131,6 +140,53 @@ export function Chat({
     },
   });
 
+  // Clean up URL when block is closed (only if it was actually opened)
+  useEffect(() => {
+    if (!block.isVisible && documentIdFromUrl && documentWasOpenedRef.current) {
+      router.replace('/', { scroll: false });
+      loadedDocumentIdRef.current = null; // Reset so document can be reopened
+      documentWasOpenedRef.current = false;
+    }
+  }, [block.isVisible, documentIdFromUrl, router]);
+
+  // Open document from URL parameter (e.g., from My Documents page)
+  useEffect(() => {
+    if (
+      documentIdFromUrl && 
+      documentIdFromUrl !== 'init' && 
+      loadedDocumentIdRef.current !== documentIdFromUrl
+    ) {
+      // Mark this document as loaded to prevent re-fetching
+      loadedDocumentIdRef.current = documentIdFromUrl;
+      
+      // Fetch document from API
+      fetcher(`/api/document?id=${documentIdFromUrl}`)
+        .then((docs: any[]) => {
+          if (docs && docs.length > 0) {
+            const doc = docs[0];
+            setBlock({
+              documentId: documentIdFromUrl,
+              content: doc.content || '',
+              title: doc.title || 'Untitled Document',
+              status: 'idle',
+              isVisible: true,
+              boundingBox: {
+                top: windowHeight / 4,
+                left: windowWidth / 4,
+                width: 250,
+                height: 50,
+              },
+            });
+            // Mark that we successfully opened the document
+            documentWasOpenedRef.current = true;
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to load document from URL:', err);
+        });
+    }
+  }, [documentIdFromUrl, windowHeight, windowWidth]);
+
   const { data: votes } = useSWR<Array<Vote>>(
     `/api/vote?chatId=${id}`,
     fetcher
@@ -143,13 +199,14 @@ export function Chat({
 
   return (
     <>
-      <div className="flex flex-col min-w-0 h-dvh bg-background">
+      <div className={`flex flex-col min-w-0 h-dvh bg-background ${block.isVisible ? 'overflow-hidden' : ''}`}>
         <ChatHeader selectedModelId={selectedModelId} />
-        <div
-          ref={messagesContainerRef}
-          className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4"
-        >
-          {messages.length === 0 && <Overview />}
+        {!block.isVisible && (
+          <div
+            ref={messagesContainerRef}
+            className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4"
+          >
+            {messages.length === 0 && <Overview />}
 
           {messages.map((message, index) => (
             <PreviewMessage
@@ -178,6 +235,8 @@ export function Chat({
             className="shrink-0 min-w-[24px] min-h-[24px]"
           />
         </div>
+        )}
+        {!block.isVisible && (
         <div className="mx-auto px-4 bg-background w-full md:max-w-3xl">
           <ToolToggle toolConfig={toolConfig} setToolConfig={setToolConfig} />
           <form className="flex pb-4 md:pb-6 gap-2">
@@ -193,6 +252,9 @@ export function Chat({
               messages={messages}
               setMessages={setMessages}
               append={append}
+              toolConfig={toolConfig}
+              setToolConfig={setToolConfig}
+              isBlockVisible={block.isVisible}
             />
             <div className="flex flex-row gap-2 pb-1 items-end">
               <div
@@ -214,6 +276,7 @@ export function Chat({
             </div>
           </form>
         </div>
+        )}
       </div>
 
       <AnimatePresence>
@@ -233,6 +296,8 @@ export function Chat({
             messages={messages}
             setMessages={setMessages}
             votes={votes}
+            toolConfig={toolConfig}
+            setToolConfig={setToolConfig}
           />
         )}
       </AnimatePresence>

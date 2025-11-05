@@ -29,6 +29,16 @@ export function DocumentToolResult({
   block,
   setBlock,
 }: DocumentToolResultProps) {
+  // Don't show the card if there's an error or no valid ID
+  if (result.error || !result.id) {
+    return (
+      <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg">
+        <div className="text-xs font-medium mb-1">⚠️ Document Error</div>
+        <div className="text-sm">{result.error || 'Failed to create document'}</div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="bg-background cursor-pointer border py-2 px-3 rounded-xl w-fit flex flex-row gap-3 items-start"

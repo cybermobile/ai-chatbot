@@ -231,6 +231,30 @@ export async function getDocumentById({ id }: { id: string }) {
   }
 }
 
+export async function getAllDocumentsByUser({ userId }: { userId: string }) {
+  try {
+    // Get all documents for a user, with only the latest version of each
+    const documents = await db
+      .select()
+      .from(document)
+      .where(eq(document.userId, userId))
+      .orderBy(desc(document.createdAt));
+
+    // Group by document ID and keep only the most recent version
+    const uniqueDocuments = documents.reduce((acc, doc) => {
+      if (!acc.find((d) => d.id === doc.id)) {
+        acc.push(doc);
+      }
+      return acc;
+    }, [] as typeof documents);
+
+    return uniqueDocuments;
+  } catch (error) {
+    console.error('Failed to get all documents for user from database');
+    throw error;
+  }
+}
+
 export async function deleteDocumentsByIdAfterTimestamp({
   id,
   timestamp,

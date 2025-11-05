@@ -15,7 +15,7 @@ services:
       - "9001:9001"
     environment:
       MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: password
+      MINIO_ROOT_PASSWORD: SPX9PsPwUzJzNcRHRn+RxKDJmnO515TukfKVBotfhng=
     volumes:
       - ./data/minio:/data
     command: server /data --console-address ":9001"
@@ -23,30 +23,32 @@ services:
     image: searxng/searxng:latest
     container_name: searxng
     ports:
-      - "8080:8080"
+      - "8081:8080"
     volumes:
       - ./searxng:/etc/searxng:rw
     environment:
-      - SEARXNG_BASE_URL=http://localhost:8080/
+      - SEARXNG_BASE_URL=http://localhost:8081/
     restart: unless-stopped
   vllm:
     image: vllm/vllm-openai:latest
     container_name: vllm
     ports:
-      - "11434:8000"  # Map to Ollama's port for easy replacement
+      - "11436:8000"  # vLLM main inference port
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     command: >
-      --model meta-llama/Meta-Llama-3.1-8B-Instruct
+      --model hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4
+      --quantization awq
+      --dtype auto
+      --enable-auto-tool-choice
       --tool-call-parser llama3_json
-      --chat-template /vllm-workspace/examples/tool_chat_template_llama3_json.jinja
       --host 0.0.0.0
       --port 8000
-      --gpu-memory-utilization 0.7
+      --gpu-memory-utilization 0.8
       --max-model-len 8192
-      --dtype auto
+      --max-num-seqs 4
     deploy:
       resources:
         reservations:
@@ -56,27 +58,15 @@ services:
               capabilities: [gpu]
     shm_size: '4gb'
     restart: unless-stopped
-  vllm-embeddings:
-    image: vllm/vllm-openai:latest
-    container_name: vllm-embeddings
-    ports:
-      - "11435:8000"
-    volumes:
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    environment:
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    command: >
-      --model BAAI/bge-small-en-v1.5
-      --host 0.0.0.0
-      --port 8000
-      --gpu-memory-utilization 0.3
-      --dtype auto
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    shm_size: '2gb'
-    restart: unless-stopped
+  # embeddings:
+  #   image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.2
+  #   container_name: embeddings
+  #   ports:
+  #     - "11435:80"
+  #   volumes:
+  #     - ~/.cache/huggingface:/data
+  #   environment:
+  #     - MODEL_ID=BAAI/bge-small-en-v1.5
+  #     - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+  #   command: --model-id BAAI/bge-small-en-v1.5 --port 80
+  #   restart: unless-stopped

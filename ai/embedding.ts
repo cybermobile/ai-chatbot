@@ -1,5 +1,5 @@
 import { embed, embedMany } from 'ai';
-import { openai } from '@ai-sdk/openai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { ollama } from 'ollama-ai-provider-v2';
 import { removeStopwords } from 'stopword';
@@ -9,11 +9,14 @@ const VLLM_EMBEDDING_URL = process.env.VLLM_EMBEDDING_URL || 'http://127.0.0.1:1
 const VLLM_EMBEDDING_MODEL = process.env.VLLM_EMBEDDING_MODEL || 'BAAI/bge-small-en-v1.5';
 const OLLAMA_EMBEDDING_MODEL = process.env.OLLAMA_EMBEDDING_MODEL || 'nomic-embed-text';
 
+// Create vLLM embedding provider (OpenAI-compatible)
+const vllmEmbeddingProvider = createOpenAI({
+  baseURL: `${VLLM_EMBEDDING_URL}/v1`,
+  apiKey: 'sk-vllm-placeholder-key-not-required',
+});
+
 export const embeddingModel = LLM_PROVIDER === 'vllm'
-  ? openai.textEmbeddingModel(VLLM_EMBEDDING_MODEL, {
-      baseURL: `${VLLM_EMBEDDING_URL}/v1`,
-      apiKey: 'vllm',
-    })
+  ? vllmEmbeddingProvider.textEmbeddingModel(VLLM_EMBEDDING_MODEL)
   : ollama.textEmbeddingModel(OLLAMA_EMBEDDING_MODEL);
 
 // Clean text
