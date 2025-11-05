@@ -15,6 +15,13 @@
       "when": 1762037479118,
       "tag": "0001_fine_thena",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1762312074789,
+      "tag": "0002_little_penance",
+      "breakpoints": true
     }
   ]
 }

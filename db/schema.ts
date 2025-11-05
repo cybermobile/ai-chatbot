@@ -142,3 +142,52 @@ export const embedding = pgTable(
 );
 
 export type Suggestion = InferSelectModel<typeof suggestion>;
+
+// Workflow-related tables
+export const securityScans = pgTable('SecurityScans', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  source: varchar('source', { length: 255 }).notNull(),
+  severity: varchar('severity', { length: 20 }),
+  issuesFound: jsonb('issuesFound').default(0),
+  logsAnalyzed: jsonb('logsAnalyzed').default(0),
+  analysis: jsonb('analysis'),
+  emailSent: boolean('emailSent').default(false),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+});
+
+export type SecurityScan = InferSelectModel<typeof securityScans>;
+
+export const ragIngestions = pgTable('RagIngestions', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  source: varchar('source', { length: 255 }).notNull(),
+  documentsProcessed: jsonb('documentsProcessed').default(0),
+  embeddingsCreated: jsonb('embeddingsCreated').default(0),
+  status: varchar('status', { length: 20 }),
+  error: text('error'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  completedAt: timestamp('completedAt'),
+});
+
+export type RagIngestion = InferSelectModel<typeof ragIngestions>;
+
+export const workflows = pgTable('Workflows', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  type: varchar('type', { length: 50 }).notNull(),
+  schedule: varchar('schedule', { length: 100 }),
+  config: jsonb('config').notNull(),
+  enabled: boolean('enabled').default(true),
+  lastRun: timestamp('lastRun'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+});
+
+export type Workflow = InferSelectModel<typeof workflows>;
