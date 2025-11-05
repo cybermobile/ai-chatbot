@@ -6,6 +6,15 @@ This project now includes **Vercel Workflow** and **Model Context Protocol (MCP)
 - 📧 **Email alerts** for security issues
 - ⏰ **Scheduled workflows** via Vercel Cron
 
+## ⚠️ Important: AI SDK v5 & Production Deployment
+
+This project uses **AI SDK v5.0.87**. The MCP integration works differently in local vs. production:
+
+- ✅ **Local Development**: Fully functional with stdio transport (subprocess)
+- ⏳ **Production Deployment**: Requires HTTP transport (see [MCP_PRODUCTION_DEPLOYMENT.md](./MCP_PRODUCTION_DEPLOYMENT.md))
+
+**You can use all features immediately in local development!** Production deployment requires additional MCP server setup.
+
 ## Architecture Overview
 
 ```

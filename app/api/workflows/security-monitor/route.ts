@@ -42,23 +42,10 @@ export async function POST(req: Request) {
 
     console.log('Connecting to MCP filesystem server...');
 
-    // Import MCP client
-    const { experimental_createMCPClient } = await import('ai');
-    const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
+    // Import MCP client factory (supports both local stdio and production HTTP)
+    const { createFilesystemMCPClient } = await import('@/lib/mcp-client');
 
-    const client = await experimental_createMCPClient({
-      transport: new StdioClientTransport({
-        command: 'node',
-        args: ['./lib/mcp-servers/dist/filesystem-server.js'],
-        env: {
-          WINDOWS_SERVER: process.env.WINDOWS_SERVER || '',
-          WINDOWS_SHARE: process.env.WINDOWS_SHARE || '',
-          WINDOWS_USERNAME: process.env.WINDOWS_USERNAME || '',
-          WINDOWS_PASSWORD: process.env.WINDOWS_PASSWORD || '',
-          MOUNT_POINT: process.env.MOUNT_POINT || '/mnt/windows-share',
-        },
-      }),
-    });
+    const client = await createFilesystemMCPClient();
 
     console.log('MCP client connected');
     return client;
