@@ -1,0 +1,35 @@
+# Caddyfile for AI Chatbot
+
+# Main application
+localhost {
+  reverse_proxy app:3000
+
+  # Enable compression
+  encode gzip
+
+  # Logging
+  log {
+    output file /data/access.log
+  }
+}
+
+# Optional: Separate endpoints for services
+localhost:8080 {
+  # SearXNG web search
+  reverse_proxy searxng:8080
+}
+
+localhost:9000 {
+  # MinIO object storage
+  reverse_proxy storage:9000
+}
+
+localhost:9001 {
+  # MinIO console
+  reverse_proxy storage:9001
+}
+
+localhost:7474 {
+  # Neo4j browser
+  reverse_proxy neo4j:7474
+}
