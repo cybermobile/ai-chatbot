@@ -1,4 +1,4 @@
-import { Message } from 'ai';
+import { type UIMessage as Message } from 'ai';
 import { toast } from 'sonner';
 import { useSWRConfig } from 'swr';
 import { useCopyToClipboard } from 'usehooks-ts';
@@ -31,8 +31,21 @@ export function MessageActions({
 
   if (isLoading) return null;
   if (message.role === 'user') return null;
-  if (message.toolInvocations && message.toolInvocations.length > 0)
+  // AI SDK v5: Check if message has tool calls in parts array
+  if ((message as any).parts?.some((part: any) => part.type === 'tool-call'))
     return null;
+
+  // AI SDK v5: Extract text content from parts array
+  const getMessageText = () => {
+    const msg = message as any;
+    if (msg.parts && Array.isArray(msg.parts)) {
+      return msg.parts
+        .filter((part: any) => part.type === 'text')
+        .map((part: any) => part.text)
+        .join('\n');
+    }
+    return msg.content || '';
+  };
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -43,7 +56,7 @@ export function MessageActions({
               className="py-1 px-2 h-fit text-muted-foreground"
               variant="outline"
               onClick={async () => {
-                await copyToClipboard(message.content as string);
+                await copyToClipboard(getMessageText());
                 toast.success('Copied to clipboard!');
               }}
             >

@@ -1,7 +1,7 @@
 import { customModel } from '@/ai';
 import { DEFAULT_MODEL_ID } from '@/ai/models';
 import { getDocumentById, saveDocument } from '@/db/queries';
-import { StreamData, streamText } from 'ai';
+import { streamText } from 'ai';
 import { Session } from 'next-auth';
 
 export const updateDocument = async ({
@@ -13,7 +13,7 @@ export const updateDocument = async ({
 }: {
   id: string;
   description: string;
-  stream: StreamData;
+  stream: any; // AI SDK v5: StreamData removed, using any for custom stream type
   modelId: string;
   session: Session;
 }) => {
@@ -49,12 +49,12 @@ export const updateDocument = async ({
   for await (const delta of fullStream) {
     const { type } = delta;
     if (type === 'text-delta') {
-      const { textDelta } = delta;
+      const { text } = delta;
 
-      draftText += textDelta;
+      draftText += text;
       stream.append({
         type: 'text-delta',
-        content: textDelta,
+        content: text,
       });
     }
   }

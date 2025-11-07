@@ -1,6 +1,7 @@
 'use client';
 
-import { ChatRequestOptions, CreateMessage, Message } from 'ai';
+import { ChatRequestOptions, type UIMessage as Message } from 'ai';
+type CreateMessage = any; // AI SDK v5: CreateUIMessage is generic
 import cx from 'classnames';
 import {
   AnimatePresence,
@@ -30,7 +31,7 @@ import {
 type ToolProps = {
   type: 'final-polish' | 'request-suggestions' | 'adjust-reading-level';
   description: string;
-  icon: JSX.Element;
+  icon: React.ReactElement;
   selectedTool: string | null;
   setSelectedTool: Dispatch<SetStateAction<string | null>>;
   isToolbarVisible?: boolean;
@@ -335,12 +336,12 @@ export const Toolbar = ({
   setMessages: Dispatch<SetStateAction<Message[]>>;
 }) => {
   const toolbarRef = useRef<HTMLDivElement>(null);
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const [selectedTool, setSelectedTool] = useState<string | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  useOnClickOutside(toolbarRef, () => {
+  useOnClickOutside(toolbarRef as any, () => {
     setIsToolbarVisible(false);
     setSelectedTool(null);
   });

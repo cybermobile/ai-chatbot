@@ -8,7 +8,8 @@ import { ToolToggle } from '@/components/custom/tool-toggle';
 import { Vote } from '@/db/schema';
 import { fetcher } from '@/lib/utils';
 import { type ToolConfig } from '@/ai/tools';
-import { Attachment, Message, ChatRequestOptions, CreateMessage } from 'ai';
+import { type Attachment } from '@ai-sdk/ui-utils';
+import { type UIMessage as Message, ChatRequestOptions, type CreateUIMessage as CreateMessage } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileIcon } from 'lucide-react';
@@ -54,7 +55,6 @@ export function Chat({
     sendMessage,
     status,
     stop,
-    data: streamingData,
   } = useChat({
     id, // v5: Set chat ID here, not in body
     api: '/api/chat',
@@ -63,7 +63,10 @@ export function Chat({
     onFinish: () => {
       mutate('/api/history');
     },
-  });
+  } as any);
+
+  // TODO: AI SDK v5 - data property no longer available in useChat
+  const streamingData = undefined;
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
@@ -107,16 +110,16 @@ export function Chat({
   };
 
   // Wrapper for append to include dynamic values (AI SDK v5 uses sendMessage)
-  const append = async (message: Message | CreateMessage, chatRequestOptions?: ChatRequestOptions) => {
+  const append = async (message: any, chatRequestOptions?: ChatRequestOptions): Promise<string | null | undefined> => {
     // Extract the message text
-    const messageText = typeof message === 'string' 
-      ? message 
-      : 'content' in message 
-        ? message.content 
+    const messageText = typeof message === 'string'
+      ? message
+      : 'content' in message
+        ? message.content
         : (message as any).text || '';
-    
+
     // Send the message - sendMessage will add it to the UI automatically
-    return sendMessage(
+    await sendMessage(
       { text: messageText },
       {
         body: {
@@ -129,6 +132,8 @@ export function Chat({
         ...(chatRequestOptions || {}),
       }
     );
+
+    return null; // AI SDK v5 sendMessage doesn't return message ID
   };
 
   const { width: windowWidth = 1920, height: windowHeight = 1080 } =

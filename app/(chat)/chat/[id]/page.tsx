@@ -1,6 +1,6 @@
 import { DEFAULT_MODEL_ID, fetchModelsFromOllama } from '@/ai/models';
 import { auth } from '@/app/(auth)/auth';
-import { Chat as PreviewChat } from '@/components/custom/chat';
+import { ChatWithWorkflow } from '@/components/custom/chat-with-workflow';
 import { getChatById, getMessagesByChatId } from '@/db/queries';
 import { convertToUIMessages } from '@/lib/utils';
 import { cookies } from 'next/headers';
@@ -43,7 +43,7 @@ export default async function Page(props: { params: Promise<any> }) {
     DEFAULT_MODEL_ID;
 
   return (
-    <PreviewChat
+    <ChatWithWorkflow
       key={chat.id}
       id={chat.id}
       initialMessages={convertToUIMessages(messagesFromDb)}

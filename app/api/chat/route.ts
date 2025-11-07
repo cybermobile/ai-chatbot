@@ -9,7 +9,7 @@ import {
   deleteChatById,
 } from '@/db/queries';
 import { generateUUID, getMostRecentUserMessage } from '@/lib/utils';
-import { convertToCoreMessages, generateText, streamText, type Message } from 'ai';
+import { convertToCoreMessages, generateText, streamText } from 'ai';
 
 export const maxDuration = 60;
 
@@ -19,10 +19,10 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     // v5 format: { id, modelId, selectedFileIds, toolConfig, messages }
-    // messages is the full conversation history from the client (Message[])
+    // messages is the full conversation history from the client
     const { id, messages, toolConfig, modelId: bodyModelId, selectedFileIds } = body as {
       id: string;
-      messages?: Message[];
+      messages?: any[];
       toolConfig?: ToolConfig;
       modelId?: string;
       selectedFileIds?: string[];
@@ -271,9 +271,8 @@ export async function POST(request: Request) {
         maxSteps: 15, // More steps to ensure model generates response after tool use
         toolChoice: 'auto', // Let the model decide when to use tools
       }),
-      onStepFinish: ({ text, toolCalls, toolResults, finishReason, stepType, response }) => {
+      onStepFinish: ({ text, toolCalls, toolResults, finishReason, response }) => {
         console.log('[Chat API] Step finished:', {
-          stepType,
           hasText: !!text,
           textLength: text?.length || 0,
           textPreview: text && typeof text === 'string' ? text.substring(0, 100) : null,
@@ -291,12 +290,12 @@ export async function POST(request: Request) {
         if (toolCalls && toolCalls.length > 0) {
           console.log('[Chat API] Tool calls:', toolCalls.map(tc => ({
             name: tc.toolName,
-            args: tc.args,
+            args: (tc as any).args,
           })));
         }
         if (toolResults && toolResults.length > 0) {
           console.log('[Chat API] Tool results preview:', toolResults.map(tr => {
-            const resultStr = tr.result ? JSON.stringify(tr.result) : '';
+            const resultStr = (tr as any).result ? JSON.stringify((tr as any).result) : '';
             return {
               toolName: tr.toolName,
               resultPreview: resultStr.substring(0, 100),
@@ -304,7 +303,7 @@ export async function POST(request: Request) {
           }));
         }
       },
-      onFinish: async ({ text, toolCalls, toolResults, finishReason, usage, response, rawResponse }) => {
+      onFinish: async ({ text, toolCalls, toolResults, finishReason, usage, response }) => {
         console.log('[Chat API] Stream finished:', {
           hasText: !!text,
           textLength: text?.length || 0,

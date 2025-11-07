@@ -2,7 +2,7 @@ import { customModel } from '@/ai';
 import { DEFAULT_MODEL_ID } from '@/ai/models';
 import { saveDocument } from '@/db/queries';
 import { generateUUID } from '@/lib/utils';
-import { StreamData, streamText } from 'ai';
+import { streamText } from 'ai';
 import { Session } from 'next-auth';
 
 export const createDocument = async ({
@@ -12,7 +12,7 @@ export const createDocument = async ({
   session,
 }: {
   title?: string;
-  stream: StreamData;
+  stream: any; // AI SDK v5: StreamData no longer exists
   modelId: string;
   session: Session;
 }) => {
@@ -45,12 +45,12 @@ export const createDocument = async ({
     const { type } = delta;
 
     if (type === 'text-delta') {
-      const { textDelta } = delta;
+      const { text } = delta;
 
-      draftText += textDelta;
+      draftText += text;
       stream.append({
         type: 'text-delta',
-        content: textDelta,
+        content: text,
       });
     }
   }

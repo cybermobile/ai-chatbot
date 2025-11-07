@@ -8,7 +8,7 @@ import './globals.css';
 export const metadata: Metadata = {
   metadataBase: new URL('https://chat.vercel.ai'),
   title: 'AIinABox',
-  description: 'AI-powered chatbot with document creation and RAG capabilities.',
+  description: 'On-Premises AI chatbot with document creation and RAG capabilities.',
 };
 
 export const viewport = {

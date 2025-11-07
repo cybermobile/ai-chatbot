@@ -1,6 +1,7 @@
 'use client';
 
-import { Attachment, ChatRequestOptions, CreateMessage, Message } from 'ai';
+import { ChatRequestOptions, CreateUIMessage, type UIMessage as Message } from 'ai';
+import type { Attachment } from '@ai-sdk/ui-utils';
 import cx from 'classnames';
 import { formatDistance } from 'date-fns';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -79,7 +80,7 @@ export function Block({
   setMessages: Dispatch<SetStateAction<Array<Message>>>;
   votes: Array<Vote> | undefined;
   append: (
-    message: Message | CreateMessage,
+    message: any,
     chatRequestOptions?: ChatRequestOptions
   ) => Promise<string | null | undefined>;
   handleSubmit: (
@@ -150,10 +151,14 @@ export function Block({
   // Hide body overflow when Block is visible
   useEffect(() => {
     try {
-      document.body.style.overflow = 'hidden';
+      if (window.document?.body) {
+        window.document.body.style.overflow = 'hidden';
+      }
       return () => {
         try {
-          document.body.style.overflow = 'unset';
+          if (window.document?.body) {
+            window.document.body.style.overflow = 'unset';
+          }
         } catch (e) {
           // Ignore cleanup errors
         }

@@ -1,12 +1,5 @@
-import { auth } from '@/app/(auth)/auth';
-import { customModel } from '@/ai/models';
-import { streamText } from 'ai';
-import { Resend } from 'resend';
-
-// Vercel Workflow support
+// Vercel Workflow support - all imports moved to dynamic to avoid bundling Node.js built-ins
 export const maxDuration = 300; // 5 minutes for long-running workflow
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface SecurityAnalysis {
   severity: 'none' | 'low' | 'medium' | 'high' | 'critical';
@@ -24,6 +17,8 @@ interface SecurityAnalysis {
 export async function POST(req: Request) {
   'use workflow';
 
+  // Import auth dynamically to avoid bundling crypto dependencies during workflow discovery
+  const { auth } = await import('@/app/(auth)/auth');
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -54,6 +49,10 @@ export async function POST(req: Request) {
   // Step 2: Analyze logs with AI using MCP tools
   async function analyzeLogsWithAI(mcpClient: any): Promise<SecurityAnalysis> {
     'use step';
+
+    // Import AI dependencies dynamically to avoid bundling during workflow discovery
+    const { customModel } = await import('@/ai');
+    const { streamText } = await import('ai');
 
     console.log('Getting MCP tools...');
     const tools = await mcpClient.tools();
@@ -98,8 +97,10 @@ IMPORTANT: Return ONLY the JSON object, no additional text or markdown formattin
 
     const result = await streamText({
       model: customModel('llama3.1:latest'),
-      tools,
-      maxSteps: 15, // Allow AI to use tools multiple times
+      ...(tools && Object.keys(tools).length > 0 && {
+        tools,
+        maxSteps: 15, // Allow AI to use tools multiple times
+      }),
       messages: [
         {
           role: 'system',
@@ -161,6 +162,10 @@ IMPORTANT: Return ONLY the JSON object, no additional text or markdown formattin
       console.log('No recipients configured, skipping email');
       return { sent: false, reason: 'No recipients' };
     }
+
+    // Import Resend dynamically to avoid bundling during workflow discovery
+    const { Resend } = await import('resend');
+    const resend = new Resend(process.env.RESEND_API_KEY);
 
     console.log(`Sending alert to: ${recipients.join(', ')}`);
 
@@ -293,14 +298,14 @@ IMPORTANT: Return ONLY the JSON object, no additional text or markdown formattin
   }
 
   // Step 4: Save scan results to database
-  async function saveScanResults(analysis: SecurityAnalysis, emailResult: any) {
+  async function saveScanResults(userId: string, analysis: SecurityAnalysis, emailResult: any) {
     'use step';
 
     const { db } = await import('@/db/drizzle');
     const { securityScans } = await import('@/db/schema');
 
     await db.insert(securityScans).values({
-      userId: session.user!.id!,
+      userId,
       source: `${process.env.WINDOWS_SERVER}/${process.env.WINDOWS_SHARE}/${logDirectory}`,
       severity: analysis.severity,
       issuesFound: analysis.issues.length,
@@ -318,7 +323,7 @@ IMPORTANT: Return ONLY the JSON object, no additional text or markdown formattin
     mcpClient = await getMCPTools();
     const analysis = await analyzeLogsWithAI(mcpClient);
     const emailResult = await sendSecurityAlert(analysis);
-    await saveScanResults(analysis, emailResult);
+    await saveScanResults(session.user.id, analysis, emailResult);
 
     return Response.json({
       success: true,

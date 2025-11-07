@@ -1,10 +1,4 @@
-import { auth } from '@/app/(auth)/auth';
-import { customModel } from '@/ai/models';
-import { embed, embedMany } from 'ai';
-import { db } from '@/db/drizzle';
-import { resource, embedding as embeddingTable } from '@/db/schema';
-
-// Vercel Workflow support
+// Vercel Workflow support - all imports moved to dynamic to avoid bundling Node.js built-ins
 export const maxDuration = 600; // 10 minutes for long-running workflow
 
 interface Document {
@@ -28,6 +22,8 @@ interface EmbeddingChunk {
 export async function POST(req: Request) {
   'use workflow';
 
+  // Import auth dynamically to avoid bundling crypto dependencies during workflow discovery
+  const { auth } = await import('@/app/(auth)/auth');
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -97,6 +93,11 @@ export async function POST(req: Request) {
   async function generateEmbeddings(documents: Document[]): Promise<EmbeddingChunk[]> {
     'use step';
 
+    // Import AI dependencies dynamically to avoid bundling during workflow discovery
+    const { embedMany } = await import('ai');
+    const { createOpenAI } = await import('@ai-sdk/openai');
+    const { ollama } = await import('ollama-ai-provider-v2');
+
     console.log(`Generating embeddings for ${documents.length} documents...`);
 
     const chunks: EmbeddingChunk[] = [];
@@ -123,14 +124,31 @@ export async function POST(req: Request) {
     console.log(`Created ${chunks.length} chunks`);
 
     // Generate embeddings using the embedding model
-    // Your project uses nomic-embed-text for Ollama or BAAI/bge-small-en-v1.5 for vLLM
-    const embeddingModelName = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
+    // Support both Ollama (nomic-embed-text) and vLLM (BAAI/bge-small-en-v1.5)
+    const llmProvider = process.env.LLM_PROVIDER || 'ollama';
+    const embeddingModelName = process.env.EMBEDDING_MODEL ||
+      (llmProvider === 'vllm' ? 'BAAI/bge-small-en-v1.5' : 'nomic-embed-text');
 
-    console.log(`Generating embeddings with model: ${embeddingModelName}`);
+    console.log(`Generating embeddings with ${llmProvider} model: ${embeddingModelName}`);
 
     try {
+      let embeddingModel;
+
+      if (llmProvider === 'vllm') {
+        // vLLM uses OpenAI-compatible embedding endpoint
+        const llmBaseUrl = process.env.LLM_BASE_URL || 'http://127.0.0.1:11436';
+        const vllmProvider = createOpenAI({
+          baseURL: `${llmBaseUrl}/v1`,
+          apiKey: 'sk-vllm-placeholder-key-not-required',
+        });
+        embeddingModel = vllmProvider.textEmbeddingModel(embeddingModelName);
+      } else {
+        // Ollama
+        embeddingModel = ollama.textEmbeddingModel(embeddingModelName);
+      }
+
       const { embeddings } = await embedMany({
-        model: customModel(embeddingModelName),
+        model: embeddingModel,
         values: chunks.map((c) => c.content),
       });
 
@@ -152,6 +170,10 @@ export async function POST(req: Request) {
     'use step';
 
     console.log(`Storing ${embeddings.length} embeddings in database...`);
+
+    // Import DB dependencies inside step to avoid bundling during workflow discovery
+    const { db } = await import('@/db/drizzle');
+    const { resource, embedding: embeddingTable } = await import('@/db/schema');
 
     // Create resource record
     const [resourceRecord] = await db
@@ -180,7 +202,7 @@ export async function POST(req: Request) {
         batch.map((emb) => ({
           resourceId: resourceRecord.id,
           content: emb.content,
-          embedding: JSON.stringify(emb.embedding),
+          embedding: emb.embedding,
         }))
       );
 
@@ -194,16 +216,19 @@ export async function POST(req: Request) {
 
   // Step 4: Save ingestion record
   async function saveIngestionRecord(
+    userId: string,
     documentsProcessed: number,
     embeddingsCreated: number,
     resourceId: string
   ) {
     'use step';
 
+    // Import DB dependencies inside step to avoid bundling during workflow discovery
+    const { db } = await import('@/db/drizzle');
     const { ragIngestions } = await import('@/db/schema');
 
     await db.insert(ragIngestions).values({
-      userId: session.user!.id!,
+      userId,
       source: `${process.env.WINDOWS_SERVER}/${process.env.WINDOWS_SHARE}/${documentDirectory}`,
       documentsProcessed,
       embeddingsCreated,
@@ -229,7 +254,7 @@ export async function POST(req: Request) {
 
     const embeddingsData = await generateEmbeddings(documents);
     const resourceId = await storeEmbeddings(embeddingsData, session.user.id);
-    await saveIngestionRecord(documents.length, embeddingsData.length, resourceId);
+    await saveIngestionRecord(session.user.id, documents.length, embeddingsData.length, resourceId);
 
     return Response.json({
       success: true,
@@ -243,6 +268,7 @@ export async function POST(req: Request) {
 
     // Save failed ingestion record
     try {
+      const { db } = await import('@/db/drizzle');
       const { ragIngestions } = await import('@/db/schema');
       await db.insert(ragIngestions).values({
         userId: session.user!.id!,

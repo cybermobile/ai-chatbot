@@ -5,12 +5,13 @@ import { evaluate } from 'mathjs';
 // Web Search Tool (using SearXNG)
 export const webSearchTool = tool({
   description: 'Search the web for current information. Use this when you need up-to-date information or facts that may not be in your training data.',
-  parameters: z.object({
+  inputSchema: z.object({
     query: z.string().describe('The search query'),
   }),
-  execute: async ({ query }) => {
+  execute: async (args) => {
+    const { query } = args;
     try {
-      const searxngUrl = process.env.SEARXNG_URL || 'http://localhost:8080';
+      const searxngUrl = process.env.SEARXNG_URL || 'http://localhost:8081';
       console.log('[Web Search] Searching for:', query);
 
       const response = await fetch(
@@ -64,18 +65,19 @@ export const webSearchTool = tool({
 // RAG Tool with Hybrid Search (Semantic + Keyword/BM25)
 export const ragTool = tool({
   description: 'Search through your knowledge base documents using hybrid RAG (combines semantic + keyword search). Use this to find relevant information from uploaded documents. IMPORTANT: The parameter name is "query" (not "context" or "question").',
-  parameters: z.object({
+  inputSchema: z.object({
     query: z.string().describe('The search query - the question or topic to search for in the knowledge base. This is a REQUIRED parameter.'),
     topK: z.number().optional().default(5).describe('Number of relevant chunks to retrieve'),
     alpha: z.number().optional().default(0.6).describe('Hybrid search weight: 0-1 (higher = more semantic, lower = more keyword-based). Default 0.6 = 60% semantic, 40% keyword'),
   }),
-  execute: async (params: any) => {
+  execute: async (params) => {
+    // Support both 'query' and 'context' parameter names for backwards compatibility
+    // Some models might use 'context' instead of 'query'
+    const query = (params as any).query || (params as any).context || '';
+    const topK = (params as any).topK || 5;
+    const alpha = (params as any).alpha || 0.6;
+
     try {
-      // Support both 'query' and 'context' parameter names for backwards compatibility
-      // Some models might use 'context' instead of 'query'
-      const query = params.query || params.context || '';
-      const topK = params.topK || 5;
-      const alpha = params.alpha || 0.6;
 
       console.log('[RAG] Tool called with raw params:', params);
       console.log('[RAG] Extracted parameters:', { query, topK, alpha });
@@ -153,7 +155,7 @@ export const ragTool = tool({
 // Calculator Tool
 export const calculatorTool = tool({
   description: 'Perform mathematical calculations. Use this for precise arithmetic operations.',
-  parameters: z.object({
+  inputSchema: z.object({
     expression: z.string().describe('The mathematical expression to evaluate (e.g., "2 + 2", "sqrt(16)", "sin(pi/2)")'),
   }),
   execute: async ({ expression }) => {
@@ -174,7 +176,7 @@ export const calculatorTool = tool({
 // Accept both lat/lon and latitude/longitude since models often abbreviate
 export const getWeatherTool = tool({
   description: 'Get current weather and forecast for a location. Shows a nice weather widget with temperature, hourly forecast, and sunrise/sunset times. Use this when users ask about weather.',
-  parameters: z.object({
+  inputSchema: z.object({
     latitude: z.number().optional().describe('Latitude of the location (e.g., 59.91 for Oslo)'),
     longitude: z.number().optional().describe('Longitude of the location (e.g., 10.75 for Oslo)'),
     lat: z.number().optional().describe('Latitude (abbreviated form)'),
@@ -238,7 +240,7 @@ export const getWeatherTool = tool({
 // Create Document Tool
 export const createDocumentTool = tool({
   description: 'Create a new document with AI-generated content about a specific topic. Use this when the user asks you to write, draft, or create a document. The document will be displayed in a full-screen canvas editor with version history.',
-  parameters: z.object({
+  inputSchema: z.object({
     title: z.string().min(1).optional().describe('The title or main topic of the document to create'),
     topic: z.string().min(1).optional().describe('Alternative: the topic of the document'),
     prompt: z.string().min(1).optional().describe('Alternative: the prompt describing what to write'),
@@ -324,7 +326,7 @@ export const createDocumentTool = tool({
 // Update Document Tool
 export const updateDocumentTool = tool({
   description: 'Update an existing document with new content based on user instructions.',
-  parameters: z.object({
+  inputSchema: z.object({
     id: z.string().describe('The ID of the document to update'),
     description: z.string().describe('Instructions on how to update the document'),
   }),

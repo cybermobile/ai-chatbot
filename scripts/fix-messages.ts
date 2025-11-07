@@ -10,7 +10,7 @@
  *   --fix: Set empty string for messages with null/undefined content
  */
 
-import { db } from '@/db/queries';
+import { db } from '@/db/drizzle';
 import { message } from '@/db/schema';
 import { eq, or, isNull } from 'drizzle-orm';
 

@@ -1,6 +1,8 @@
 'use client';
 
-import { Attachment, ChatRequestOptions, CreateMessage, Message } from 'ai';
+import { type Attachment } from '@ai-sdk/ui-utils';
+import { ChatRequestOptions, type UIMessage as Message } from 'ai';
+type CreateMessage = any; // AI SDK v5: CreateUIMessage is generic, using any for simplicity
 import cx from 'classnames';
 import { motion } from 'framer-motion';
 import React, {
@@ -126,7 +128,7 @@ export function MultimodalInput({
 
     handleSubmit(undefined, {
       experimental_attachments: attachments,
-    });
+    } as any); // AI SDK v5: experimental_attachments type not in ChatRequestOptions
 
     setAttachments([]);
     setLocalStorageInput('');
@@ -169,7 +171,7 @@ export function MultimodalInput({
                       setToolConfig(prev => ({
                         ...prev,
                         ...suggestedAction.enableTools,
-                      }));
+                      } as ToolConfig));
                     }
 
                     // v5: Use text field instead of role/content

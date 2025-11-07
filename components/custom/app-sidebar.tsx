@@ -19,7 +19,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { BetterTooltip } from '@/components/ui/tooltip';
-import { FileText } from 'lucide-react';
+import { FileText, Workflow, Shield } from 'lucide-react';
 import Link from 'next/link';
 
 export function AppSidebar({ user }: { user: User | undefined }) {
@@ -73,6 +73,30 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                     <FileText className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                     <span className="text-muted-foreground group-hover:text-foreground transition-colors font-medium">
                       My Documents
+                    </span>
+                  </Link>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <Link
+                    href="/mcp"
+                    onClick={() => setOpenMobile(false)}
+                    className="flex items-center gap-3 px-2 py-2 text-sm rounded-md hover:bg-muted transition-colors group"
+                  >
+                    <Shield className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    <span className="text-muted-foreground group-hover:text-foreground transition-colors font-medium">
+                      MCP Servers
+                    </span>
+                  </Link>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <Link
+                    href="/workflows"
+                    onClick={() => setOpenMobile(false)}
+                    className="flex items-center gap-3 px-2 py-2 text-sm rounded-md hover:bg-muted transition-colors group"
+                  >
+                    <Workflow className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    <span className="text-muted-foreground group-hover:text-foreground transition-colors font-medium">
+                      Workflows
                     </span>
                   </Link>
                 </SidebarMenuItem>

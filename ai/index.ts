@@ -8,7 +8,7 @@ const LLM_BASE_URL = process.env.LLM_BASE_URL || 'http://127.0.0.1:11434';
 const vllmProvider = createOpenAI({
   baseURL: `${LLM_BASE_URL}/v1`,
   apiKey: 'sk-vllm-placeholder-key-not-required',
-  compatibility: 'compatible', // Use compatible mode for non-OpenAI servers
+  // Note: compatibility option not available in current @ai-sdk/openai version
 });
 
 export const customModel = (apiIdentifier: string) => {

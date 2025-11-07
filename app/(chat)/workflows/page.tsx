@@ -118,13 +118,13 @@ export default async function WorkflowsPage() {
                   </div>
                 </div>
 
-                {scan.analysis && typeof scan.analysis === 'object' && 'summary' in scan.analysis && (
+                {scan.analysis && typeof scan.analysis === 'object' && 'summary' in scan.analysis ? (
                   <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-900 rounded">
                     <p className="text-sm text-gray-700 dark:text-gray-300">
                       {(scan.analysis as any).summary}
                     </p>
                   </div>
-                )}
+                ) : null}
               </div>
             ))}
           </div>

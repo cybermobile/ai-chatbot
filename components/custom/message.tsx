@@ -1,6 +1,6 @@
 'use client';
 
-import { Message } from 'ai';
+import { UIMessage as Message } from 'ai';
 import cx from 'classnames';
 import { motion } from 'framer-motion';
 import { Dispatch, SetStateAction } from 'react';
@@ -34,9 +34,9 @@ export const PreviewMessage = ({
   console.log('[PreviewMessage] Rendering message:', {
     id: message.id,
     role: message.role,
-    contentType: typeof message.content,
-    contentIsArray: Array.isArray(message.content),
-    content: message.content,
+    partsType: typeof (message as any).parts,
+    partsIsArray: Array.isArray((message as any).parts),
+    parts: (message as any).parts,
   });
 
   return (
@@ -70,17 +70,17 @@ export const PreviewMessage = ({
             </div>
           )}
 
-          {/* Legacy: Handle string content */}
-          {!((message as any).parts) && message.content && typeof message.content === 'string' && (
+          {/* Legacy: Handle string content (for old DB messages) */}
+          {!((message as any).parts) && (message as any).content && typeof (message as any).content === 'string' && (
             <div className="flex flex-col gap-4">
-              <Markdown>{message.content}</Markdown>
+              <Markdown>{(message as any).content}</Markdown>
             </div>
           )}
 
-          {/* Legacy: Handle array content */}
-          {!((message as any).parts) && Array.isArray(message.content) && message.content.length > 0 && (
+          {/* Legacy: Handle array content (for old DB messages) */}
+          {!((message as any).parts) && Array.isArray((message as any).content) && (message as any).content.length > 0 && (
             <div className="flex flex-col gap-4">
-              {message.content.map((part: any, index: number) => {
+              {(message as any).content.map((part: any, index: number) => {
                 if (part.type === 'text' && part.text) {
                   return <Markdown key={index}>{part.text}</Markdown>;
                 }
@@ -89,9 +89,9 @@ export const PreviewMessage = ({
             </div>
           )}
 
-          {message.toolInvocations && message.toolInvocations.length > 0 && (
+          {(message as any).toolInvocations && (message as any).toolInvocations.length > 0 && (
             <div className="flex flex-col gap-4">
-              {message.toolInvocations.map((toolInvocation) => {
+              {(message as any).toolInvocations.map((toolInvocation: any) => {
                 const { toolName, toolCallId, state, args } = toolInvocation;
 
                 console.log('[Message] Tool invocation:', { toolName, state, hasResult: !!toolInvocation.result });
@@ -229,9 +229,9 @@ export const PreviewMessage = ({
             </div>
           )}
 
-          {message.experimental_attachments && (
+          {(message as any).experimental_attachments && (
             <div className="flex flex-row gap-2">
-              {message.experimental_attachments.map((attachment) => (
+              {(message as any).experimental_attachments.map((attachment: any) => (
                 <PreviewAttachment
                   key={attachment.url}
                   attachment={attachment}
