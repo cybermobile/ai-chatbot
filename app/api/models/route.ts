@@ -22,48 +22,50 @@ interface OllamaListResponse {
 
 export async function GET() {
   try {
-    const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
-    
-    const response = await fetch(`${ollamaBaseUrl}/api/tags`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    // Using vLLM with OpenAI-compatible endpoint
+    const baseUrl = process.env.LLM_BASE_URL || 'http://127.0.0.1:11436';
 
-    if (!response.ok) {
-      throw new Error(`Ollama API returned ${response.status}`);
-    }
-
-    const data: OllamaListResponse = await response.json();
-    
-    // Transform Ollama models to our format
-    const models = data.models
-      .filter(model => !model.name.includes('embed')) // Filter out embedding models
-      .map(model => {
-        const name = model.name;
-        const [baseName, tag] = name.split(':');
-        
-        return {
-          id: name,
-          label: name.toUpperCase(),
-          apiIdentifier: name,
-          description: `${formatBytes(model.size)} • Modified ${new Date(model.modified_at).toLocaleDateString()}`,
-        };
+    try {
+      // vLLM OpenAI-compatible endpoint
+      const response = await fetch(`${baseUrl}/v1/models`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
 
-    return NextResponse.json({ models });
+      if (!response.ok) {
+        throw new Error(`vLLM API returned ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Transform vLLM models (OpenAI format) to our format
+      const models = data.data
+        .filter((model: any) => !model.id.includes('embed')) // Filter out embedding models
+        .map((model: any) => ({
+          id: model.id,
+          label: model.id.split('/').pop()?.toUpperCase() || model.id.toUpperCase(),
+          apiIdentifier: model.id,
+          description: `vLLM Model • ${model.owned_by || 'huggingface'}`,
+        }));
+
+      return NextResponse.json({ models });
+    } catch (fetchError) {
+      console.error('Failed to fetch from vLLM:', fetchError);
+      throw fetchError;
+    }
   } catch (error) {
-    console.error('Error fetching Ollama models:', error);
-    
-    // Return fallback model if Ollama is not available
+    console.error('Error fetching models:', error);
+
+    // Return fallback model
     return NextResponse.json({
       models: [
         {
-          id: 'llama3.1:latest',
-          label: 'LLAMA 3.1:LATEST',
-          apiIdentifier: 'llama3.1:latest',
-          description: 'Fallback model (Ollama not connected)',
+          id: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
+          label: 'Qwen 2.5 7B Instruct (AWQ)',
+          apiIdentifier: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
+          description: 'Fallback model (vLLM server not connected)',
         },
       ],
     });

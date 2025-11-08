@@ -221,7 +221,25 @@ export async function POST(request: Request) {
       after: mergedMessages.length,
     });
 
-    const userMessage = getMostRecentUserMessage(mergedMessages);
+    // Truncate message history to prevent GPU OOM errors
+    // Keep system prompt + recent messages within token budget
+    // With 4096 token limit: ~600 system prompt + ~500 tool defs + ~2500 for messages + ~500 for response
+    const MAX_CONTEXT_MESSAGES = 4; // Keep last 4 messages (2 turns)
+    let truncatedMessages = mergedMessages;
+
+    if (mergedMessages.length > MAX_CONTEXT_MESSAGES) {
+      // Always keep the most recent user message and context
+      const recentMessages = mergedMessages.slice(-MAX_CONTEXT_MESSAGES);
+      truncatedMessages = recentMessages;
+
+      console.log('[Chat API] Truncated message history:', {
+        original: mergedMessages.length,
+        truncated: truncatedMessages.length,
+        dropped: mergedMessages.length - truncatedMessages.length,
+      });
+    }
+
+    const userMessage = getMostRecentUserMessage(truncatedMessages);
 
     if (!userMessage) {
       return new Response('No user message found', { status: 400 });
@@ -258,18 +276,18 @@ export async function POST(request: Request) {
     console.log('[Chat API] Enabled tools:', Object.keys(tools));
 
     // 8. Stream response
-    console.log('[Chat API] Starting stream with', mergedMessages.length, 'messages');
+    console.log('[Chat API] Starting stream with', truncatedMessages.length, 'messages');
     console.log('[Chat API] Model:', model.apiIdentifier, '| Has tools:', hasTools);
 
     const result = await streamText({
       model: customModel(model.apiIdentifier),
-      system: systemPrompt,
-      messages: mergedMessages,
-      temperature: 0.7, // Slightly higher to encourage text generation after tool calls
+      system: systemPrompt +'\n\nCRITICAL: After calling ANY tool and receiving its result, you MUST generate a natural language response to the user explaining what happened. Do not stop after just calling a tool!',
+      messages: truncatedMessages,
+      temperature: 0.8,
       ...(hasTools && {
         tools,
-        maxSteps: 15, // More steps to ensure model generates response after tool use
-        toolChoice: 'auto', // Let the model decide when to use tools
+        maxSteps: 15,
+        experimental_continueSteps: true,
       }),
       onStepFinish: ({ text, toolCalls, toolResults, finishReason, response }) => {
         console.log('[Chat API] Step finished:', {

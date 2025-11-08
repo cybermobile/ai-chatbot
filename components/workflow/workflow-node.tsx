@@ -1,9 +1,18 @@
 'use client';
 
 import React from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
-import { MessageSquare, Brain, Wrench, CheckCircle, User } from 'lucide-react';
+import { MessageSquare, Brain, Wrench, CheckCircle, User, Copy, ExternalLink } from 'lucide-react';
 import { WorkflowStep } from './workflow-canvas';
+import {
+  Node,
+  NodeHeader,
+  NodeTitle,
+  NodeDescription,
+  NodeContent,
+  NodeFooter,
+} from '@/components/ai-elements/node';
+import { Toolbar } from '@/components/ai-elements/toolbar';
+import { Button } from '@/components/ui/button';
 
 const getNodeIcon = (type: WorkflowStep['type']) => {
   switch (type) {
@@ -25,17 +34,17 @@ const getNodeIcon = (type: WorkflowStep['type']) => {
 const getNodeColor = (type: WorkflowStep['type']) => {
   switch (type) {
     case 'user':
-      return 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800';
+      return 'border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/50';
     case 'reasoning':
-      return 'bg-purple-50 dark:bg-purple-950 border-purple-200 dark:border-purple-800';
+      return 'border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/50';
     case 'tool-call':
-      return 'bg-orange-50 dark:bg-orange-950 border-orange-200 dark:border-orange-800';
+      return 'border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/50';
     case 'tool-result':
-      return 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800';
+      return 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/50';
     case 'response':
-      return 'bg-gray-50 dark:bg-gray-950 border-gray-200 dark:border-gray-800';
+      return 'border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50';
     default:
-      return 'bg-gray-50 dark:bg-gray-950 border-gray-200 dark:border-gray-800';
+      return 'border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50';
   }
 };
 
@@ -46,9 +55,9 @@ const getNodeTitle = (type: WorkflowStep['type'], toolName?: string) => {
     case 'reasoning':
       return 'AI Reasoning';
     case 'tool-call':
-      return `Tool: ${toolName || 'Unknown'}`;
+      return toolName || 'Tool Call';
     case 'tool-result':
-      return `Result: ${toolName || 'Unknown'}`;
+      return toolName ? `${toolName} Result` : 'Tool Result';
     case 'response':
       return 'AI Response';
     default:
@@ -56,49 +65,105 @@ const getNodeTitle = (type: WorkflowStep['type'], toolName?: string) => {
   }
 };
 
+const getNodeDescription = (type: WorkflowStep['type'], timestamp: number) => {
+  const time = new Date(timestamp).toLocaleTimeString();
+  switch (type) {
+    case 'user':
+      return `User message at ${time}`;
+    case 'reasoning':
+      return `Thinking at ${time}`;
+    case 'tool-call':
+      return `Executed at ${time}`;
+    case 'tool-result':
+      return `Completed at ${time}`;
+    case 'response':
+      return `Generated at ${time}`;
+    default:
+      return time;
+  }
+};
+
 export function WorkflowNode({ data }: any) {
   const { type, content, toolName, toolArgs, toolResult, timestamp } = data;
 
+  const handleCopy = () => {
+    const textToCopy = content || JSON.stringify(toolResult || toolArgs, null, 2);
+    navigator.clipboard.writeText(textToCopy);
+  };
+
   return (
-    <div className={`px-4 py-3 shadow-md rounded-lg border-2 ${getNodeColor(type)} min-w-[200px] max-w-[300px]`}>
-      <Handle type="target" position={Position.Top} className="w-2 h-2" />
-
-      <div className="flex items-center gap-2 mb-2">
-        {getNodeIcon(type)}
-        <div className="font-semibold text-sm">{getNodeTitle(type, toolName)}</div>
-      </div>
-
-      <div className="text-xs text-muted-foreground mb-2">
-        {new Date(timestamp).toLocaleTimeString()}
-      </div>
-
-      {content && (
-        <div className="text-sm mb-2">
-          <p className="line-clamp-3">{content}</p>
+    <Node
+      handles={{
+        target: type !== 'user',
+        source: type !== 'response',
+      }}
+      className={`group ${getNodeColor(type)}`}
+    >
+      <NodeHeader>
+        <div className="flex items-center gap-2">
+          {getNodeIcon(type)}
+          <NodeTitle>{getNodeTitle(type, toolName)}</NodeTitle>
         </div>
+        <NodeDescription>{getNodeDescription(type, timestamp)}</NodeDescription>
+      </NodeHeader>
+
+      <NodeContent>
+        {content && (
+          <p className="text-sm line-clamp-4 whitespace-pre-wrap">{content}</p>
+        )}
+
+        {toolArgs && (
+          <div className="mt-2 p-2 bg-muted rounded text-xs">
+            <div className="font-medium mb-1">Arguments:</div>
+            <pre className="overflow-x-auto max-h-32">
+              {JSON.stringify(toolArgs, null, 2)}
+            </pre>
+          </div>
+        )}
+
+        {toolResult && (
+          <div className="mt-2 p-2 bg-muted rounded text-xs">
+            <div className="font-medium mb-1">Result:</div>
+            <pre className="overflow-x-auto max-h-32">
+              {typeof toolResult === 'string'
+                ? toolResult
+                : JSON.stringify(toolResult, null, 2)}
+            </pre>
+          </div>
+        )}
+      </NodeContent>
+
+      {(content || toolResult) && (
+        <NodeFooter>
+          <span className="text-xs">
+            {content
+              ? `${content.length} characters`
+              : toolResult
+              ? 'Click to view full result'
+              : ''}
+          </span>
+        </NodeFooter>
       )}
 
-      {toolArgs && (
-        <div className="mt-2 p-2 bg-background/50 rounded text-xs">
-          <div className="font-medium mb-1">Arguments:</div>
-          <pre className="overflow-x-auto">
-            {JSON.stringify(toolArgs, null, 2)}
-          </pre>
-        </div>
-      )}
-
-      {toolResult && (
-        <div className="mt-2 p-2 bg-background/50 rounded text-xs">
-          <div className="font-medium mb-1">Result:</div>
-          <pre className="overflow-x-auto line-clamp-3">
-            {typeof toolResult === 'string'
-              ? toolResult
-              : JSON.stringify(toolResult, null, 2)}
-          </pre>
-        </div>
-      )}
-
-      <Handle type="source" position={Position.Bottom} className="w-2 h-2" />
-    </div>
+      <Toolbar>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={handleCopy}
+          className="h-7 w-7 p-0"
+          title="Copy content"
+        >
+          <Copy className="h-3 w-3" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-7 p-0"
+          title="View details"
+        >
+          <ExternalLink className="h-3 w-3" />
+        </Button>
+      </Toolbar>
+    </Node>
   );
 }

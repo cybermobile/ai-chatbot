@@ -327,21 +327,65 @@ export function Block({
               ref={messagesContainerRef}
               className="flex flex-col gap-4 h-full overflow-y-scroll px-4 pt-20 w-full"
             >
-              {messages.map((message, index) => (
-                <PreviewMessage
-                  chatId={chatId}
-                  key={message.id}
-                  message={message}
-                  block={block}
-                  setBlock={setBlock}
-                  isLoading={isLoading && index === messages.length - 1}
-                  vote={
-                    votes
-                      ? votes.find((vote) => vote.messageId === message.id)
-                      : undefined
+              {messages.map((message, index) => {
+                // Merge tool results into preceding assistant messages
+                const mergedMessage: any = { ...message };
+
+                // If this is an assistant message, look for following tool messages
+                if (message.role === 'assistant' && index < messages.length - 1) {
+                  const toolResults: any[] = [];
+                  let nextIndex = index + 1;
+
+                  // Collect consecutive tool messages
+                  while (nextIndex < messages.length && (messages[nextIndex] as any).role === 'tool') {
+                    const toolMsg = messages[nextIndex] as any;
+                    if (Array.isArray(toolMsg.content)) {
+                      toolResults.push(...toolMsg.content);
+                    } else if (toolMsg.content) {
+                      toolResults.push(toolMsg.content);
+                    }
+                    nextIndex++;
                   }
-                />
-              ))}
+
+                  // Append tool results to assistant message content
+                  if (toolResults.length > 0) {
+                    const msgContent = (message as any).content;
+                    if (!msgContent) {
+                      mergedMessage.content = [];
+                    } else if (typeof msgContent === 'string') {
+                      mergedMessage.content = [{ type: 'text', text: msgContent }];
+                    } else if (!Array.isArray(msgContent)) {
+                      mergedMessage.content = [msgContent];
+                    } else {
+                      mergedMessage.content = [...msgContent];
+                    }
+
+                    // Add tool results to the content array
+                    mergedMessage.content = [...mergedMessage.content, ...toolResults];
+                  }
+                }
+
+                // Skip rendering tool messages (they're merged into assistant messages)
+                if ((message as any).role === 'tool') {
+                  return null;
+                }
+
+                return (
+                  <PreviewMessage
+                    chatId={chatId}
+                    key={message.id}
+                    message={mergedMessage}
+                    block={block}
+                    setBlock={setBlock}
+                    isLoading={isLoading && index === messages.length - 1}
+                    vote={
+                      votes
+                        ? votes.find((vote) => vote.messageId === message.id)
+                        : undefined
+                    }
+                  />
+                );
+              })}
 
               <div
                 ref={messagesEndRef}

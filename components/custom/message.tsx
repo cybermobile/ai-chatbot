@@ -30,15 +30,6 @@ export const PreviewMessage = ({
   vote: Vote | undefined;
   isLoading: boolean;
 }) => {
-  // Debug logging
-  console.log('[PreviewMessage] Rendering message:', {
-    id: message.id,
-    role: message.role,
-    partsType: typeof (message as any).parts,
-    partsIsArray: Array.isArray((message as any).parts),
-    parts: (message as any).parts,
-  });
-
   return (
     <motion.div
       className="w-full mx-auto max-w-3xl px-4 group/message"
@@ -62,9 +53,111 @@ export const PreviewMessage = ({
           {(message as any).parts && Array.isArray((message as any).parts) && (
             <div className="flex flex-col gap-4">
               {(message as any).parts.map((part: any, index: number) => {
+                // Handle text parts
                 if (part.type === 'text' && part.text) {
                   return <Markdown key={index}>{part.text}</Markdown>;
                 }
+
+                // Handle tool call parts (AI SDK v5 format)
+                if (part.type?.startsWith('tool-') && part.state === 'result') {
+                  const toolName = part.type.replace('tool-', '');
+                  // AI SDK may wrap results in { type: "json", value: {...} }
+                  let result = part.output;
+                  if (result && typeof result === 'object' && result.type === 'json' && result.value) {
+                    result = result.value;
+                  }
+
+                  return (
+                    <div key={index}>
+                      {toolName === 'getWeather' || toolName === 'weather' ? (
+                        result?.error ? (
+                          <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg">
+                            <div className="text-xs font-medium mb-1">⚠️ Weather Error</div>
+                            <div className="text-sm">{result.error}</div>
+                          </div>
+                        ) : result ? (
+                          <Weather weatherAtLocation={result} />
+                        ) : null
+                      ) : toolName === 'calculator' ? (
+                        <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                          <div className="text-xs font-medium mb-2 text-blue-700 dark:text-blue-400 flex items-center gap-2">
+                            🧮 Calculator
+                          </div>
+                          {result?.error ? (
+                            <div className="text-sm text-red-600 dark:text-red-400">{result.error}</div>
+                          ) : (
+                            <div className="space-y-1">
+                              <div className="text-sm text-muted-foreground">Expression: <code className="bg-muted px-1 rounded">{result?.expression || part.input?.expression}</code></div>
+                              <div className="text-lg font-semibold text-blue-700 dark:text-blue-300">Result: {result?.result}</div>
+                            </div>
+                          )}
+                        </div>
+                      ) : toolName === 'webSearch' ? (
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            🔍 Web Search Results
+                          </div>
+                          <pre className="text-xs overflow-auto max-h-60">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                      ) : toolName === 'rag' ? (
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            📚 Knowledge Base Results
+                          </div>
+                          <pre className="text-xs overflow-auto max-h-60">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                      ) : toolName === 'createDocument' ? (
+                        <>
+                          <DocumentToolResult
+                            type="create"
+                            result={result}
+                            block={block}
+                            setBlock={setBlock}
+                          />
+                          {result?.id && !result?.error && (
+                            <div className="text-sm text-muted-foreground mt-2">
+                              ✨ Document created! Click the card above to view and edit it.
+                            </div>
+                          )}
+                        </>
+                      ) : toolName === 'updateDocument' ? (
+                        <>
+                          <DocumentToolResult
+                            type="update"
+                            result={result}
+                            block={block}
+                            setBlock={setBlock}
+                          />
+                          {result?.id && !result?.error && (
+                            <div className="text-sm text-muted-foreground mt-2">
+                              ✨ Document updated! Click the card above to view changes.
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            🔧 Tool: {toolName}
+                          </div>
+                          <pre className="text-xs overflow-auto max-h-60">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // Handle tool calls in progress
+                if (part.type?.startsWith('tool-') && (part.state === 'input-available' || part.state === 'call')) {
+                  const toolName = part.type.replace('tool-', '');
+                  return (
+                    <div key={index} className="bg-muted/50 p-3 rounded-lg border animate-pulse">
+                      <div className="text-xs text-muted-foreground">
+                        ⏳ Calling {toolName}...
+                      </div>
+                    </div>
+                  );
+                }
+
                 return null;
               })}
             </div>
@@ -77,13 +170,115 @@ export const PreviewMessage = ({
             </div>
           )}
 
-          {/* Legacy: Handle array content (for old DB messages) */}
+          {/* Legacy: Handle array content (for old DB messages or CoreMessage format) */}
           {!((message as any).parts) && Array.isArray((message as any).content) && (message as any).content.length > 0 && (
             <div className="flex flex-col gap-4">
               {(message as any).content.map((part: any, index: number) => {
+                // Handle text parts
                 if (part.type === 'text' && part.text) {
                   return <Markdown key={index}>{part.text}</Markdown>;
                 }
+
+                // Handle tool-call parts (CoreMessage format from database)
+                // Don't render tool-call parts in assistant messages - they're internal
+                // The tool-result will be shown separately in a tool message
+                if (part.type === 'tool-call') {
+                  return null;
+                }
+
+                // Handle tool-result parts (CoreMessage format from database)
+                if (part.type === 'tool-result') {
+                  const toolName = part.toolName;
+                  // AI SDK may wrap results in { type: "json", value: {...} }
+                  // The result can be in either part.result or part.output
+                  let result = (part as any).output || (part as any).result;
+                  if (result && typeof result === 'object' && result.type === 'json' && result.value) {
+                    result = result.value;
+                  }
+
+                  return (
+                    <div key={index}>
+                      {toolName === 'weather' ? (
+                        result?.error ? (
+                          <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg">
+                            <div className="text-xs font-medium mb-1">⚠️ Weather Error</div>
+                            <div className="text-sm">{result.error}</div>
+                          </div>
+                        ) : result ? (
+                          <Weather weatherAtLocation={result} />
+                        ) : null
+                      ) : toolName === 'calculator' ? (
+                        <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                          <div className="text-xs font-medium mb-2 text-blue-700 dark:text-blue-400 flex items-center gap-2">
+                            🧮 Calculator
+                          </div>
+                          {result?.error ? (
+                            <div className="text-sm text-red-600 dark:text-red-400">{result.error}</div>
+                          ) : (
+                            <div className="space-y-1">
+                              <div className="text-sm text-muted-foreground">
+                                Expression: <code className="bg-muted px-1 rounded">{result?.expression}</code>
+                              </div>
+                              <div className="text-lg font-semibold text-blue-700 dark:text-blue-300">
+                                Result: {result?.result}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : toolName === 'webSearch' ? (
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            🔍 Web Search Results
+                          </div>
+                          <pre className="text-xs overflow-auto max-h-60">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                      ) : toolName === 'rag' ? (
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            📚 Knowledge Base Results
+                          </div>
+                          <pre className="text-xs overflow-auto max-h-60">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                      ) : toolName === 'createDocument' ? (
+                        <>
+                          <DocumentToolResult
+                            type="create"
+                            result={result}
+                            block={block}
+                            setBlock={setBlock}
+                          />
+                          {result?.id && !result?.error && (
+                            <div className="text-sm text-muted-foreground mt-2">
+                              ✨ Document created! Click the card above to view and edit it.
+                            </div>
+                          )}
+                        </>
+                      ) : toolName === 'updateDocument' ? (
+                        <>
+                          <DocumentToolResult
+                            type="update"
+                            result={result}
+                            block={block}
+                            setBlock={setBlock}
+                          />
+                          {result?.id && !result?.error && (
+                            <div className="text-sm text-muted-foreground mt-2">
+                              ✨ Document updated! Click the card above to view changes.
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="bg-muted p-3 rounded-lg border">
+                          <div className="text-xs font-medium mb-2 text-muted-foreground">
+                            🔧 Tool Result: {toolName}
+                          </div>
+                          <pre className="text-xs overflow-auto max-h-60">{JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
                 return null;
               })}
             </div>
@@ -93,8 +288,6 @@ export const PreviewMessage = ({
             <div className="flex flex-col gap-4">
               {(message as any).toolInvocations.map((toolInvocation: any) => {
                 const { toolName, toolCallId, state, args } = toolInvocation;
-
-                console.log('[Message] Tool invocation:', { toolName, state, hasResult: !!toolInvocation.result });
 
                 if (state === 'result') {
                   const { result } = toolInvocation;

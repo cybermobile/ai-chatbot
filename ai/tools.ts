@@ -239,17 +239,12 @@ export const getWeatherTool = tool({
 
 // Create Document Tool
 export const createDocumentTool = tool({
-  description: 'Create a new document with AI-generated content about a specific topic. Use this when the user asks you to write, draft, or create a document. The document will be displayed in a full-screen canvas editor with version history.',
+  description: 'Create a new document with AI-generated content. Use this tool when the user explicitly asks to "create a document", "write a document", "draft a document", or similar requests. The document will be saved and displayed in an editor. IMPORTANT: You must call this tool when the user asks to create or write a document.',
   inputSchema: z.object({
-    title: z.string().min(1).optional().describe('The title or main topic of the document to create'),
-    topic: z.string().min(1).optional().describe('Alternative: the topic of the document'),
-    prompt: z.string().min(1).optional().describe('Alternative: the prompt describing what to write'),
-  }).refine(data => data.title || data.topic || data.prompt, {
-    message: 'One of title, topic, or prompt must be provided',
+    title: z.string().min(1).describe('The title or main topic of the document. This should be a clear, descriptive title like "React Hooks Guide" or "Introduction to TypeScript".'),
   }),
-  execute: async ({ title, topic, prompt }) => {
-    // Accept title, topic, or prompt parameter
-    const documentTitle = title || topic || prompt || '';
+  execute: async ({ title }) => {
+    const documentTitle = title;
     console.log('[createDocument] Tool called with title:', documentTitle);
     
     // Validate title
@@ -402,7 +397,7 @@ export function getEnabledTools(config: ToolConfig) {
   if (config.webSearch) tools.webSearch = webSearchTool;
   if (config.rag) tools.rag = ragTool;
   if (config.calculator) tools.calculator = calculatorTool;
-  if (config.weather) tools.getWeather = getWeatherTool;
+  if (config.weather) tools.weather = getWeatherTool;
   if (config.createDocument) tools.createDocument = createDocumentTool;
   if (config.updateDocument) tools.updateDocument = updateDocumentTool;
 

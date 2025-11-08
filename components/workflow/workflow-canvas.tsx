@@ -7,17 +7,19 @@ import {
   Controls,
   MiniMap,
   Node,
-  Edge,
   useNodesState,
   useEdgesState,
   addEdge,
-  Connection,
+  Connection as FlowConnection,
   MarkerType,
   Panel,
   useReactFlow,
 } from '@xyflow/react';
+import type { Edge as EdgeType } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { WorkflowNode } from './workflow-node';
+import { Edge } from '@/components/ai-elements/edge';
+import { Connection } from '@/components/ai-elements/connection';
 import { Button } from '@/components/ui/button';
 import { Download, ZoomIn, ZoomOut, Maximize2, Filter } from 'lucide-react';
 import {
@@ -46,6 +48,12 @@ const nodeTypes = {
   workflow: WorkflowNode,
 } as any; // ReactFlow NodeTypes type compatibility
 
+const edgeTypes = {
+  animated: Edge.Animated,
+  temporary: Edge.Temporary,
+  default: Edge.Default,
+} as any; // ReactFlow EdgeTypes type compatibility
+
 export function WorkflowCanvas({ steps, className }: WorkflowCanvasProps) {
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [filters, setFilters] = useState({
@@ -73,24 +81,36 @@ export function WorkflowCanvas({ steps, className }: WorkflowCanvasProps) {
   }, [filteredSteps, selectedNode]);
 
   // Create edges connecting sequential steps
-  const initialEdges: Edge[] = useMemo(() => {
-    return filteredSteps.slice(0, -1).map((step, index) => ({
-      id: `edge-${step.id}-${filteredSteps[index + 1].id}`,
-      source: step.id,
-      target: filteredSteps[index + 1].id,
-      type: 'smoothstep',
-      animated: index === filteredSteps.length - 2, // Animate the last edge
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-      },
-    }));
+  const initialEdges: EdgeType[] = useMemo(() => {
+    return filteredSteps.slice(0, -1).map((step, index) => {
+      const nextStep = filteredSteps[index + 1];
+      const isLastEdge = index === filteredSteps.length - 2;
+      
+      // Use different edge types based on step types
+      let edgeType = 'default';
+      if (isLastEdge || step.type === 'tool-call' || step.type === 'tool-result') {
+        edgeType = 'animated';
+      } else if (step.type === 'reasoning' || nextStep.type === 'tool-result') {
+        edgeType = 'temporary';
+      }
+      
+      return {
+        id: `edge-${step.id}-${nextStep.id}`,
+        source: step.id,
+        target: nextStep.id,
+        type: edgeType,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+        },
+      };
+    });
   }, [filteredSteps]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    (params: FlowConnection) => setEdges((eds) => addEdge(params, eds)),
     [setEdges]
   );
 
@@ -138,6 +158,8 @@ export function WorkflowCanvas({ steps, className }: WorkflowCanvasProps) {
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        connectionLineComponent={Connection}
         fitView
         minZoom={0.3}
         maxZoom={2}

@@ -52,6 +52,7 @@ export async function POST(req: Request) {
 
     // Import AI dependencies dynamically to avoid bundling during workflow discovery
     const { customModel } = await import('@/ai');
+    const { DEFAULT_MODEL_ID } = await import('@/ai/models');
     const { streamText } = await import('ai');
 
     console.log('Getting MCP tools...');
@@ -96,7 +97,7 @@ After analyzing the logs, return your findings in VALID JSON format:
 IMPORTANT: Return ONLY the JSON object, no additional text or markdown formatting.`;
 
     const result = await streamText({
-      model: customModel('llama3.1:latest'),
+      model: customModel(DEFAULT_MODEL_ID),
       ...(tools && Object.keys(tools).length > 0 && {
         tools,
         maxSteps: 15, // Allow AI to use tools multiple times

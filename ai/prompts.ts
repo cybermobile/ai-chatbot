@@ -7,11 +7,17 @@ export const blocksPrompt = `
   - For substantial content (>30 lines)
   - For content users will likely save/reuse (emails, code, essays, etc.)
   - When explicitly requested to create a document
+  - IMPORTANT: Always provide a "title" parameter describing the document topic
 
   **When NOT to use \`createDocument\`:**
   - For informational/explanatory content
   - For conversational responses
   - When asked to keep it in chat
+
+  **How to call createDocument:**
+  - The tool requires ONE parameter: "title" (string)
+  - Example: {"title": "React Hooks Guide"}
+  - The title should describe what the document is about
 
   **Using \`updateDocument\`:**
   - Default to full document rewrites for major changes
@@ -53,7 +59,7 @@ When no documents are selected:
 `;
 
 export const toolsPrompt = `
-**TOOL USAGE GUIDELINES:**
+**TOOL USAGE GUIDELINES FOR QWEN 2.5:**
 
 CRITICAL RULE: When you use a tool, you MUST ALWAYS follow this two-step process:
 1. Call the tool to get information or perform an action
@@ -61,6 +67,8 @@ CRITICAL RULE: When you use a tool, you MUST ALWAYS follow this two-step process
 
 NEVER EVER just call a tool and stop. You MUST ALWAYS provide a conversational text response after using ANY tool.
 If you call a tool, your next step MUST be to write a response to the user explaining what happened.
+
+IMPORTANT: After using any tool and receiving the result, you must generate a text response explaining the results to the user.
 
 **Tool-specific instructions:**
 
